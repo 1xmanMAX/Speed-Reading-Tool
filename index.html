@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="main-container">
+    <div class="main-container" id="drop-zone">
         <!-- Panel izquierdo con controles y lector -->
         <div class="left-panel">
             <div class="container">
@@ -62,11 +62,22 @@
                     <button id="fullscreen">⛶</button>
                 </div>
 
-                <input type="file" id="file-input" accept=".txt">
+                <div class="file-drop-area">
+                    <input type="file" id="file-input" accept=".txt">
+                    <div class="drop-message">Arrastra y suelta archivos .txt aquí</div>
+                </div>
+                
+                <!-- Nueva sección para la biblioteca de libros -->
+                <div class="library-section">
+                    <h3>Mi Biblioteca</h3>
+                    <div id="books-collection" class="books-grid">
+                        <!-- Los libros se añadirán aquí dinámicamente -->
+                    </div>
+                </div>
             </div>
         </div>
         
-        <!-- Panel derecho con el texto completo -->
+        <!-- Panel derecho con el texto completo (ahora fijo) -->
         <div class="right-panel">
             <div class="full-text-container">
                 <div id="full-text"></div>

@@ -10,6 +10,8 @@ document.addEventListener('DOMContentLoaded', function() {
     let interval;
     let timerInterval;
     let fullText = '';
+    let currentBookTitle = '';
+    let library = []; // Almacenará la colección de libros
     
     // Elementos DOM
     const wordDisplay = document.getElementById('word-display');
@@ -34,11 +36,136 @@ document.addEventListener('DOMContentLoaded', function() {
     const decreaseTimerBtn = document.getElementById('decrease-timer');
     const increaseTimerBtn = document.getElementById('increase-timer');
     const fullTextDisplay = document.getElementById('full-text');
+    const booksCollection = document.getElementById('books-collection');
+    const dropZone = document.getElementById('drop-zone');
+    const fileDropArea = document.querySelector('.file-drop-area');
     
-    // Función para cargar archivo de texto
-    fileInput.addEventListener('change', function(e) {
-        const file = e.target.files[0];
-        if (!file) return;
+    // Cargar biblioteca desde localStorage si existe
+    function loadLibrary() {
+        const savedLibrary = localStorage.getItem('fastReadingLibrary');
+        if (savedLibrary) {
+            library = JSON.parse(savedLibrary);
+            updateLibraryDisplay();
+        }
+    }
+    
+    // Guardar biblioteca en localStorage
+    function saveLibrary() {
+        localStorage.setItem('fastReadingLibrary', JSON.stringify(library));
+    }
+    
+    // Actualizar la visualización de la biblioteca
+    function updateLibraryDisplay() {
+        booksCollection.innerHTML = '';
+        
+        if (library.length === 0) {
+            const emptyMessage = document.createElement('div');
+            emptyMessage.className = 'empty-library';
+            emptyMessage.textContent = 'No hay libros en tu biblioteca. Sube un archivo .txt para comenzar.';
+            booksCollection.appendChild(emptyMessage);
+            return;
+        }
+        
+        library.forEach((book, index) => {
+            const bookCard = document.createElement('div');
+            bookCard.className = 'book-card';
+            if (book.title === currentBookTitle) {
+                bookCard.classList.add('active');
+            }
+            
+            const bookTitle = document.createElement('div');
+            bookTitle.className = 'book-title';
+            bookTitle.textContent = book.title;
+            
+            const wordCount = document.createElement('div');
+            wordCount.className = 'book-info';
+            wordCount.textContent = `${book.wordCount} palabras`;
+            
+            const progress = document.createElement('div');
+            progress.className = 'book-info';
+            const progressPercent = Math.round((book.currentIndex / (book.wordCount - 1)) * 100) || 0;
+            progress.textContent = `Progreso: ${progressPercent}%`;
+            
+            const progressBar = document.createElement('div');
+            progressBar.className = 'book-progress';
+            
+            const progressBarFill = document.createElement('div');
+            progressBarFill.className = 'book-progress-bar';
+            progressBarFill.style.width = `${progressPercent}%`;
+            
+            progressBar.appendChild(progressBarFill);
+            
+            // Botón para eliminar libro
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'delete-book';
+            deleteBtn.innerHTML = '×';
+            deleteBtn.title = 'Eliminar libro';
+            
+            // Evento para eliminar el libro
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // Evitar que se active el evento de clic de la tarjeta
+                deleteBook(index);
+            });
+            
+            bookCard.appendChild(bookTitle);
+            bookCard.appendChild(wordCount);
+            bookCard.appendChild(progress);
+            bookCard.appendChild(progressBar);
+            bookCard.appendChild(deleteBtn);
+            
+            // Evento para cargar el libro al hacer clic
+            bookCard.addEventListener('click', () => {
+                loadBookFromLibrary(index);
+            });
+            
+            booksCollection.appendChild(bookCard);
+        });
+    }
+    
+    // Función para eliminar un libro de la biblioteca
+    function deleteBook(index) {
+        if (confirm(`¿Estás seguro de que deseas eliminar "${library[index].title}" de tu biblioteca?`)) {
+            // Si el libro que se está eliminando es el que está actualmente cargado
+            if (library[index].title === currentBookTitle) {
+                // Limpiar la visualización
+                fullText = '';
+                words = [];
+                currentIndex = 0;
+                currentBookTitle = '';
+                updateDisplay();
+                updateProgress();
+                displayFullText();
+            }
+            
+            // Eliminar el libro de la biblioteca
+            library.splice(index, 1);
+            saveLibrary();
+            updateLibraryDisplay();
+        }
+    }
+    
+    // Cargar un libro desde la biblioteca
+    function loadBookFromLibrary(index) {
+        const book = library[index];
+        if (!book) return;
+        
+        fullText = book.text;
+        words = book.text.split(/\s+/).filter(word => word.length > 0);
+        currentIndex = book.currentIndex || 0;
+        currentBookTitle = book.title;
+        
+        updateDisplay();
+        updateProgress();
+        displayFullText();
+        updateLibraryDisplay();
+    }
+    
+    // Función para procesar el archivo
+    function processFile(file) {
+        if (!file || !file.name.toLowerCase().endsWith('.txt')) {
+            alert('Por favor, selecciona un archivo de texto (.txt)');
+            return;
+        }
         
         const reader = new FileReader();
         reader.onload = function(e) {
@@ -46,12 +173,89 @@ document.addEventListener('DOMContentLoaded', function() {
             fullText = text;
             words = text.split(/\s+/).filter(word => word.length > 0);
             currentIndex = 0;
+            currentBookTitle = file.name;
+            
+            // Añadir o actualizar el libro en la biblioteca
+            const existingBookIndex = library.findIndex(book => book.title === file.name);
+            
+            if (existingBookIndex !== -1) {
+                // Actualizar libro existente
+                library[existingBookIndex].text = text;
+                library[existingBookIndex].wordCount = words.length;
+                library[existingBookIndex].lastOpened = new Date().toISOString();
+            } else {
+                // Añadir nuevo libro
+                library.push({
+                    title: file.name,
+                    text: text,
+                    wordCount: words.length,
+                    currentIndex: 0,
+                    lastOpened: new Date().toISOString()
+                });
+            }
+            
+            saveLibrary();
+            updateLibraryDisplay();
             updateDisplay();
             updateProgress();
             displayFullText();
         };
         reader.readAsText(file);
+    }
+    
+    // Evento para el input de archivo tradicional
+    fileInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        processFile(file);
     });
+    
+    // Implementación de arrastrar y soltar (drag and drop)
+    
+    // Prevenir el comportamiento predeterminado solo en el área de soltar
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        fileDropArea.addEventListener(eventName, preventDefaults, false);
+    });
+    
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    
+    // Resaltar SOLO la zona específica de soltar cuando se arrastra un archivo sobre ella
+    ['dragenter', 'dragover'].forEach(eventName => {
+        fileDropArea.addEventListener(eventName, highlightDropArea, false);
+    });
+    
+    ['dragleave', 'drop'].forEach(eventName => {
+        fileDropArea.addEventListener(eventName, unhighlightDropArea, false);
+    });
+    
+    // Eliminar los eventos del dropZone (toda la interfaz)
+    // Ya no necesitamos estos eventos en toda la interfaz
+    // dropZone.addEventListener('dragenter', highlight, false);
+    // dropZone.addEventListener('dragover', highlight, false);
+    // dropZone.addEventListener('dragleave', unhighlight, false);
+    // dropZone.addEventListener('drop', handleDrop, false);
+    
+    function highlightDropArea() {
+        fileDropArea.classList.add('active');
+    }
+    
+    function unhighlightDropArea() {
+        fileDropArea.classList.remove('active');
+    }
+    
+    // Manejar el evento de soltar archivos SOLO en el área designada
+    fileDropArea.addEventListener('drop', handleDrop, false);
+    
+    function handleDrop(e) {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        
+        if (files.length > 0) {
+            processFile(files[0]);
+        }
+    }
     
     // Función para mostrar el texto completo en el panel derecho
     function displayFullText() {
@@ -147,6 +351,21 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Actualizar el resaltado en el texto completo
         displayFullText();
+        
+        // Actualizar el progreso en la biblioteca
+        updateBookProgress();
+    }
+    
+    // Actualizar el progreso del libro actual en la biblioteca
+    function updateBookProgress() {
+        if (!currentBookTitle) return;
+        
+        const bookIndex = library.findIndex(book => book.title === currentBookTitle);
+        if (bookIndex !== -1) {
+            library[bookIndex].currentIndex = currentIndex;
+            saveLibrary();
+            updateLibraryDisplay();
+        }
     }
     
     // Función para actualizar la barra de progreso
@@ -219,6 +438,9 @@ document.addEventListener('DOMContentLoaded', function() {
         // Detener el cronómetro
         clearInterval(timerInterval);
         timerInterval = null;
+        
+        // Guardar el progreso
+        updateBookProgress();
     }
     
     // Función para actualizar el temporizador
@@ -390,7 +612,8 @@ document.addEventListener('DOMContentLoaded', function() {
         updateTimer();
     });
     
-    // Inicialización
+    // Inicializar la aplicación
+    loadLibrary();
     updateTimer();
     updateDisplay();
 });
