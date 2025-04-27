@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lectura Veloz</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="main-container">
+        <!-- Panel izquierdo con controles y lector -->
+        <div class="left-panel">
+            <div class="container">
+                <div class="controls top-controls">
+                    <div class="control-group">
+                        <span id="timer">2 min</span>
+                        <div class="button-group">
+                            <button id="increase-timer">▲</button>
+                            <button id="decrease-timer">▼</button>
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <span>WPM</span>
+                        <span id="wpm">400</span>
+                        <div class="button-group">
+                            <button id="increase-wpm">▲</button>
+                            <button id="decrease-wpm">▼</button>
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <span>Palabras a la vez</span>
+                        <span id="words-at-time">1</span>
+                        <div class="button-group">
+                            <button id="increase-words">▲</button>
+                            <button id="decrease-words">▼</button>
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <span>Tamaño de fuente</span>
+                        <span id="font-size">60</span>
+                        <div class="button-group">
+                            <button id="increase-font">▲</button>
+                            <button id="decrease-font">▼</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="reader">
+                    <div id="word-display"></div>
+                </div>
+
+                <div class="progress-bar" id="progress-container">
+                    <div id="progress"></div>
+                    <div id="preview-tooltip" class="tooltip"></div>
+                </div>
+
+                <div class="controls bottom-controls">
+                    <button id="play-pause">▶</button>
+                    <button id="prev">◀◀</button>
+                    <button id="next">▶▶</button>
+                    <button id="restart">↺</button>
+                    <button id="fullscreen">⛶</button>
+                </div>
+
+                <input type="file" id="file-input" accept=".txt">
+            </div>
+        </div>
+        
+        <!-- Panel derecho con el texto completo -->
+        <div class="right-panel">
+            <div class="full-text-container">
+                <div id="full-text"></div>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
