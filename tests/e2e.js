@@ -224,15 +224,22 @@ async function openSample(page) {
     const pip = await popup;
     check('Se abre la ventana flotante', !!pip && (await page.evaluate(() => LV.app.state.mini && LV.app.state.mini.kind)) === 'docpip');
     if (pip) {
-        await pip.click('#mini-play');
+        await pip.click('#mini-stage');
         await page.waitForTimeout(1500);
+        check('Clic en la ventana flotante inicia la lectura', (await state(page)).playing);
+        await pip.mouse.wheel(0, -100);
+        check('La rueda del ratón sube la velocidad', (await page.evaluate(() => LV.app.settings.wpm)) === 325);
+        await pip.click('#mini-stage', { button: 'right' });
+        check('Clic derecho cambia a vista de frase', (await page.evaluate(() => LV.app.settings.miniView)) === 'phrase');
+        await page.waitForTimeout(500);
         await pip.screenshot({ path: path.join(OUT, '16e-ventana-flotante.png') });
         await shot(page, '16f-ventana-principal-con-flotante');
-        check('La ventana flotante controla la lectura', (await state(page)).playing);
-        await pip.click('#mini-expand');
-        await page.waitForTimeout(300);
-        check('Volver desde la ventana flotante', !(await page.evaluate(() => LV.app.state.mini)));
-        await page.evaluate(() => LV.app.pause());
+        await pip.click('#mini-stage', { button: 'right' });
+        await pip.keyboard.press('ArrowDown');
+        await pip.dblclick('#mini-stage');
+        await page.waitForTimeout(400);
+        check('Doble clic vuelve a la ventana completa', !(await page.evaluate(() => LV.app.state.mini)));
+        await page.evaluate(() => { LV.app.pause(); LV.app.setSetting('wpm', 300); });
     }
 
     // Fin de lectura y test de comprensión

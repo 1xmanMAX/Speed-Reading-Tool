@@ -212,22 +212,21 @@
     </div>
 
     <!-- ===== Mini reproductor flotante ===== -->
-    <div class="mini" id="mini-player" hidden>
-        <div class="mini-stage" data-tauri-drag-region>
-            <div class="mini-word" id="mini-word" data-tauri-drag-region></div>
+    <div class="mini" id="mini-player" tabindex="0" hidden>
+        <div class="mini-stage" id="mini-stage">
+            <div class="mini-word" id="mini-word"></div>
+        </div>
+        <div class="mini-paused" id="mini-paused" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1.2" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1.2" fill="currentColor"/></svg></div>
+        <div class="mini-osd" id="mini-osd" aria-live="polite"></div>
+        <div class="mini-help" id="mini-help" hidden>
+            <strong>Ventana flotante</strong>
+            <span><kbd>Clic</kbd> pausa · <kbd>Doble clic</kbd> volver</span>
+            <span><kbd>Rueda</kbd> velocidad · <kbd>Shift</kbd>+rueda texto</span>
+            <span><kbd>Ctrl</kbd>+rueda tamaño · arrastra para mover</span>
+            <span><kbd>Clic der.</kbd> palabra/frase · <kbd>V</kbd> voz</span>
+            <span><kbd>Espacio</kbd> <kbd>←</kbd><kbd>→</kbd> <kbd>↑</kbd><kbd>↓</kbd> <kbd>+</kbd><kbd>−</kbd> <kbd>Esc</kbd></span>
         </div>
         <div class="mini-bar"><i id="mini-fill"></i></div>
-        <div class="mini-controls">
-            <button class="mini-btn" id="mini-prev" title="Frase anterior"><svg viewBox="0 0 24 24"><path d="M11 6l-6 6 6 6M19 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-            <button class="mini-btn mini-play" id="mini-play" title="Reproducir / pausar"><svg viewBox="0 0 24 24"><path class="ico-play" d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" fill="currentColor"/><g class="ico-pause"><rect x="6" y="5" width="4" height="14" rx="1.2" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1.2" fill="currentColor"/></g></svg></button>
-            <button class="mini-btn" id="mini-next" title="Frase siguiente"><svg viewBox="0 0 24 24"><path d="M5 6l6 6-6 6M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-            <div class="mini-speed">
-                <button class="mini-btn" id="mini-slower" title="Más lento">−</button>
-                <span id="mini-wpm">300</span>
-                <button class="mini-btn" id="mini-faster" title="Más rápido">+</button>
-            </div>
-            <button class="mini-btn" id="mini-expand" title="Volver a la ventana completa"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-        </div>
     </div>
 
     <!-- ===== Paneles laterales ===== -->

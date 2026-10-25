@@ -24,6 +24,23 @@ Lectura Veloz es una aplicación de lectura rápida, moderna, gratuita y sin con
   - **App de escritorio:** la ventana se convierte en un mini reproductor sin bordes y siempre encima.
   - **Chrome y Edge:** usa *Document Picture-in-Picture*.
   - **Safari y otros:** usa Picture-in-Picture de vídeo.
+  - **Solo contenido:** sin botones ni bordes. Muestra únicamente la palabra, el bloque o la frase que lee la voz, en cualquier formato (PDF, EPUB, Word, TXT…).
+  - **Ratón:**
+    - Clic: pausa.
+    - Rueda: velocidad.
+    - `Shift`+rueda: tamaño del texto.
+    - `Ctrl`+rueda: tamaño de la ventana.
+    - Arrastrar: mover.
+    - Clic derecho: vista palabra/frase.
+    - Doble clic: volver a la ventana completa.
+  - **Teclado:** `Espacio`, `←`/`→`, `↑`/`↓`, `+`/`−`, `V` (voz), `H` (ayuda) y `Esc`.
+  - **Atajos globales** (app de escritorio, funcionan aunque estés en otra aplicación):
+    - `Ctrl+Alt+Espacio`: pausa.
+    - `Ctrl+Alt+↑`/`↓`: velocidad.
+    - `Ctrl+Alt+←`/`→`: frase.
+    - `Ctrl+Alt+V`: voz.
+    - `Ctrl+Alt+F`: ventana flotante.
+  - Cada libro de la biblioteca tiene un botón ▣ para abrirlo directamente en la ventana flotante.
   - Detalles en [docs/VENTANA-FLOTANTE.md](docs/VENTANA-FLOTANTE.md).
 
 ## Lectura en voz alta con voces de Microsoft
@@ -75,7 +92,7 @@ Lectura Veloz es una aplicación de lectura rápida, moderna, gratuita y sin con
 ## Pruebas
 
 ```bash
-npm test             # 49 comprobaciones en Chromium y capturas en tests/screenshots/
+npm test             # 51 comprobaciones en Chromium y capturas en tests/screenshots/
 ```
 
 ## Probarla

@@ -56,6 +56,8 @@
         azureKey: '',
         azureRegion: '',
         immersive: true,
+        miniView: 'auto',
+        miniScale: 1,
     };
 
     const THEMES = [
@@ -111,7 +113,6 @@
         mini: $('#mini-player'),
         miniWord: $('#mini-word'),
         miniFill: $('#mini-fill'),
-        miniWpm: $('#mini-wpm'),
         stage: $('#stage'),
         rsvp: $('#rsvp'),
         rsvpWord: $('#rsvp-word'),
@@ -269,7 +270,6 @@
         const v = voiceActive();
         el.wpmValue.textContent = v ? Number(settings.voiceRate).toFixed(1) + '×' : settings.wpm;
         el.wpmUnit.textContent = v ? 'voz' : 'ppm';
-        if (el.miniWpm) el.miniWpm.textContent = el.wpmValue.textContent;
     }
 
     function paintRange(input) {
@@ -1405,7 +1405,6 @@
                 root.setAttribute('style', document.documentElement.getAttribute('style') || '');
                 el.mini.hidden = false;
                 doc.body.appendChild(el.mini);
-                doc.addEventListener('keydown', handleKey);
                 win.addEventListener('pagehide', () => closeMini(true), { once: true });
                 state.mini = { kind, win };
                 el.pipNote.hidden = false;
@@ -1418,6 +1417,8 @@
             }
             $('#btn-pip').classList.add('is-on');
             renderMini();
+            setTimeout(() => el.mini.focus({ preventScroll: true }), 50);
+            miniOsd('Clic: pausa · Rueda: velocidad · H: ayuda', 3200);
         } catch (err) {
             state.mini = null;
             el.mini.hidden = true;
@@ -1433,7 +1434,6 @@
             document.body.classList.remove('mini-mode');
             try { await window.__TAURI__.core.invoke('set_mini_mode', { enabled: false }); } catch (e) { /* ventana cerrada */ }
         } else if (m.kind === 'docpip') {
-            m.win.document.removeEventListener('keydown', handleKey);
             document.body.appendChild(el.mini);
             if (!fromPip) m.win.close();
         } else if (m.kind === 'video') {
@@ -1446,22 +1446,28 @@
         render({ jump: true });
     }
 
-    /** Contenido del mini reproductor: palabra con ORP, bloque o fragmento resaltado */
+    /** Vista del mini lector: palabra (con ORP) o frase (fragmento con la palabra actual resaltada) */
+    function miniViewMode() {
+        if (settings.miniView === 'word' || settings.miniView === 'phrase') return settings.miniView;
+        return voiceActive() || unitEnd(state.pos) - state.pos > 1 ? 'phrase' : 'word';
+    }
+
+    /** Solo el texto pertinente: la palabra, el bloque o la frase que se está leyendo */
     function miniContent() {
         const { words } = state.tok;
-        const m = mode();
         const pos = state.pos;
-        if (voiceActive() || m.id === 'listen') {
-            const s0 = Math.max(pos - 3, T.sentenceStart(state.tok, pos + 1));
-            const s1 = Math.min(n(), pos + 5);
+        const end = unitEnd(pos);
+        if (miniViewMode() === 'phrase') {
+            if (end - pos > 1 && !voiceActive()) return { text: true, html: esc(words.slice(pos, end).join(' ')) };
+            const s0 = Math.max(pos - 4, T.sentenceStart(state.tok, pos + 1));
+            const s1 = Math.min(n(), Math.max(pos + 6, s0 + 9));
             return { text: true, html: words.slice(s0, s1).map((w, k) => (s0 + k === pos ? `<span class="hl">${esc(w)}</span>` : s0 + k < pos ? `<span class="dim">${esc(w)}</span>` : esc(w))).join(' ') };
         }
-        const end = unitEnd(pos);
-        if (end - pos > 1) return { text: true, html: esc(words.slice(pos, end).join(' ')) };
         const word = words[pos] || '';
         const chars = [...word];
         const o = Math.min(T.orpIndex(word), chars.length - 1);
-        return { text: false, html: `<span class="l">${esc(chars.slice(0, o).join(''))}</span><span class="p">${esc(chars[o] || '')}</span><span class="r">${esc(chars.slice(o + 1).join(''))}</span>`, parts: [chars.slice(0, o).join(''), chars[o] || '', chars.slice(o + 1).join('')] };
+        const parts = [chars.slice(0, o).join(''), chars[o] || '', chars.slice(o + 1).join('')];
+        return { text: false, parts, html: `<span class="l">${esc(parts[0])}</span><span class="p">${esc(parts[1])}</span><span class="r">${esc(parts[2])}</span>` };
     }
 
     function renderMini() {
@@ -1471,9 +1477,66 @@
         const frac = total > 1 ? state.pos / (total - 1) : 0;
         if (state.mini.kind === 'video') return drawVideoPip(c, frac);
         el.mini.classList.toggle('is-text', c.text);
+        el.mini.classList.toggle('is-playing', state.playing);
         el.miniWord.innerHTML = c.html;
         el.miniFill.style.width = frac * 100 + '%';
-        syncSpeedLabel();
+        el.mini.style.setProperty('--mini-scale', settings.miniScale);
+    }
+
+    let osdTimer = 0;
+    function miniOsd(text, ms = 1000) {
+        const o = $('#mini-osd', el.mini);
+        o.textContent = text;
+        o.classList.add('is-on');
+        clearTimeout(osdTimer);
+        osdTimer = setTimeout(() => o.classList.remove('is-on'), ms);
+    }
+
+    function speedText() {
+        return voiceActive() ? `Voz ${Number(settings.voiceRate).toFixed(1)}×` : `${settings.wpm} ppm`;
+    }
+
+    function miniSpeed(dir) {
+        changeWpm(dir * 25);
+        miniOsd(speedText());
+    }
+
+    function miniTextSize(dir) {
+        setSetting('miniScale', clamp(Math.round((settings.miniScale + dir * 0.1) * 10) / 10, 0.5, 2.5));
+        renderMini();
+        miniOsd(`Texto ${Math.round(settings.miniScale * 100)}%`);
+    }
+
+    function miniToggleView() {
+        const next = miniViewMode() === 'word' ? 'phrase' : 'word';
+        setSetting('miniView', next);
+        renderMini();
+        miniOsd(next === 'word' ? 'Vista: palabra' : 'Vista: frase');
+    }
+
+    async function miniWindowSize(dir) {
+        if (state.mini && state.mini.kind === 'tauri') {
+            try { await window.__TAURI__.core.invoke('mini_resize', { delta: dir > 0 ? 1.1 : 1 / 1.1 }); } catch (e) { /* sin soporte */ }
+        } else if (state.mini && state.mini.kind === 'docpip') {
+            try { state.mini.win.resizeBy(dir * 40, dir * 14); } catch (e) { /* no permitido */ }
+        }
+    }
+
+    /** Teclas propias de la ventana flotante; devuelve true si la tecla se ha gestionado */
+    function miniKey(e) {
+        const k = e.key;
+        if (k === 'Escape' || k === 'Enter') { closeMini(); return true; }
+        if (k === ' ' || k === 'k') { toggle(); return true; }
+        if (k === 'ArrowUp') { miniSpeed(1); return true; }
+        if (k === 'ArrowDown') { miniSpeed(-1); return true; }
+        if (k === 'ArrowRight') { stepSentence(1); return true; }
+        if (k === 'ArrowLeft') { stepSentence(-1); return true; }
+        if (k === '+' || k === '=') { miniTextSize(1); return true; }
+        if (k === '-') { miniTextSize(-1); return true; }
+        if (k === 'm' || k === 'M') { miniToggleView(); return true; }
+        if (k === 'v' || k === 'V') { toggleVoice(); miniOsd(voiceActive() ? 'Voz activada' : 'Voz desactivada'); return true; }
+        if (k === 'h' || k === 'H' || k === '?') { $('#mini-help', el.mini).hidden = !$('#mini-help', el.mini).hidden; return true; }
+        return false;
     }
 
     /* Respaldo para Safari y otros: Picture-in-Picture de vídeo dibujado en un canvas */
@@ -1545,12 +1608,65 @@
     }
 
     function bindMini() {
-        $('#mini-play').addEventListener('click', toggle);
-        $('#mini-prev').addEventListener('click', () => stepSentence(-1));
-        $('#mini-next').addEventListener('click', () => stepSentence(1));
-        $('#mini-slower').addEventListener('click', () => changeWpm(-25));
-        $('#mini-faster').addEventListener('click', () => changeWpm(25));
-        $('#mini-expand').addEventListener('click', () => closeMini());
+        const mini = el.mini;
+        const tauriWin = () => window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow();
+        let down = null;
+        let dragged = false;
+        let clickTimer = 0;
+
+        mini.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0) return;
+            down = { x: e.screenX, y: e.screenY };
+            dragged = false;
+        });
+        mini.addEventListener('pointermove', (e) => {
+            if (!down || dragged) return;
+            if (Math.abs(e.screenX - down.x) + Math.abs(e.screenY - down.y) > 5) {
+                dragged = true;
+                const w = state.mini && state.mini.kind === 'tauri' && tauriWin();
+                if (w) w.startDragging().catch(() => {});
+            }
+        });
+        mini.addEventListener('pointerup', () => { down = null; });
+
+        // Clic: pausa/reanuda · doble clic: volver a la ventana completa
+        mini.addEventListener('click', (e) => {
+            if (dragged || e.detail > 1) return;
+            clearTimeout(clickTimer);
+            clickTimer = setTimeout(() => {
+                toggle();
+                miniOsd(state.playing ? '▶ ' + speedText() : '❚❚ Pausa', 700);
+            }, 220);
+        });
+        mini.addEventListener('dblclick', () => {
+            clearTimeout(clickTimer);
+            closeMini();
+        });
+
+        // Rueda: velocidad · Shift: tamaño del texto · Ctrl: tamaño de la ventana
+        let wheelAcc = 0;
+        mini.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            wheelAcc += e.deltaY || e.deltaX;
+            if (Math.abs(wheelAcc) < 40) return;
+            const dir = wheelAcc < 0 ? 1 : -1;
+            wheelAcc = 0;
+            if (e.ctrlKey || e.metaKey) miniWindowSize(dir);
+            else if (e.shiftKey) miniTextSize(dir);
+            else miniSpeed(dir);
+        }, { passive: false });
+
+        // Clic derecho: alternar palabra / frase
+        mini.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            miniToggleView();
+        });
+
+        mini.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            if (miniKey(e)) { e.preventDefault(); e.stopPropagation(); }
+        });
+
         $('#btn-pip').addEventListener('click', openMini);
         $('#pip-return').addEventListener('click', () => closeMini());
     }
@@ -1682,6 +1798,7 @@
         if (tag === 'input' || tag === 'textarea' || tag === 'select' || t.isContentEditable) return;
         if (e.metaKey || e.ctrlKey || e.altKey) return;
         if (document.querySelector('dialog[open]')) return; // el diálogo gestiona sus teclas (Esc lo cierra)
+        if (state.mini && state.mini.kind === 'tauri' && miniKey(e)) { e.preventDefault(); return; }
         const inReader = !el.reader.hidden && state.tok;
         const k = e.key;
         if (inReader) hud.poke();
@@ -1794,7 +1911,10 @@
                 </div>
                 <div class="bar"><i style="width:${pct}%"></i></div>
                 <div class="book-meta">${pct}% leído${b.source ? ' · ' + esc(b.source) : ''}</div>
-                ${opts.noDelete ? '' : `<button class="book-delete" data-delete="${b.id}" title="Eliminar"><svg><use href="#i-trash"/></svg></button>`}
+                <div class="book-actions">
+                    <button class="book-act" data-float="${b.id}" title="Leer en ventana flotante"><svg><use href="#i-pip"/></svg></button>
+                    ${opts.noDelete ? '' : `<button class="book-act book-act-del" data-delete="${b.id}" title="Eliminar"><svg><use href="#i-trash"/></svg></button>`}
+                </div>
             </div>`;
     }
 
@@ -1825,6 +1945,16 @@
                 renderLibrary();
                 renderRecent();
                 toast('Libro eliminado');
+                return;
+            }
+            const fl = e.target.closest('[data-float]');
+            if (fl) {
+                e.stopPropagation();
+                const book = await S.books.get(fl.dataset.float);
+                if (!book) return;
+                closePanels();
+                openBook(book);
+                openMini();
                 return;
             }
             const card = e.target.closest('[data-book]');
@@ -2023,6 +2153,24 @@
         }
     }
 
+    async function runReaderCmd(cmd) {
+        if (!state.tok) {
+            const recent = (await S.books.all())[0];
+            if (!recent) return;
+            openBook(recent);
+        }
+        const osd = (t) => { if (state.mini) miniOsd(t); };
+        switch (cmd) {
+            case 'toggle': toggle(); osd(state.playing ? '▶ ' + speedText() : '❚❚ Pausa'); break;
+            case 'faster': changeWpm(25); osd(speedText()); break;
+            case 'slower': changeWpm(-25); osd(speedText()); break;
+            case 'next': stepSentence(1); break;
+            case 'prev': stepSentence(-1); break;
+            case 'voice': toggleVoice(); osd(voiceActive() ? 'Voz activada' : 'Voz desactivada'); break;
+            case 'float': if (state.mini) closeMini(); else openMini(); break;
+        }
+    }
+
     /* --- Integración de escritorio (Tauri): atajo global y PixPin --- */
     function bindNative() {
         const tauri = window.__TAURI__;
@@ -2047,6 +2195,8 @@
                 toast('No se pudo leer la imagen del portapapeles.', { error: true });
             }
         };
+        // Atajos globales (funcionan aunque la ventana flotante no tenga el foco)
+        tauri.event.listen('reader-cmd', (e) => runReaderCmd(String(e.payload || '')));
         (async () => {
             await tauri.event.listen('quick-read', (e) => readText(e.payload));
             await tauri.event.listen('quick-read-image', (e) => readImage(e.payload));
