@@ -1,0 +1,22 @@
+{
+  "name": "lectura-veloz",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Lectura Veloz - lector rápido RSVP (web, PWA, escritorio y móvil con Tauri 2)",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "icon": "tauri icon src-tauri/icons/icon.png",
+    "android:init": "tauri android init",
+    "android:dev": "tauri android dev",
+    "android:build": "tauri android build --apk",
+    "ios:init": "tauri ios init",
+    "ios:dev": "tauri ios dev",
+    "ios:build": "tauri ios build",
+    "serve": "npx --yes http-server web -p 8080 -c-1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

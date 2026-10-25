@@ -1,89 +1,14 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lectura Veloz</title>
-    <link rel="stylesheet" href="styles.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lectura Veloz</title>
+  <meta http-equiv="refresh" content="0; url=web/">
+  <link rel="canonical" href="web/">
+  <script>location.replace('web/' + location.search + location.hash);</script>
 </head>
-<body>
-    <div class="main-container" id="drop-zone">
-        <!-- Panel izquierdo con controles y lector -->
-        <div class="left-panel">
-            <div class="container">
-                <div class="controls top-controls">
-                    <div class="control-group">
-                        <span id="timer">2 min</span>
-                        <div class="button-group">
-                            <button id="increase-timer">▲</button>
-                            <button id="decrease-timer">▼</button>
-                        </div>
-                    </div>
-                    <div class="control-group">
-                        <span>WPM</span>
-                        <span id="wpm">400</span>
-                        <div class="button-group">
-                            <button id="increase-wpm">▲</button>
-                            <button id="decrease-wpm">▼</button>
-                        </div>
-                    </div>
-                    <div class="control-group">
-                        <span>Palabras a la vez</span>
-                        <span id="words-at-time">1</span>
-                        <div class="button-group">
-                            <button id="increase-words">▲</button>
-                            <button id="decrease-words">▼</button>
-                        </div>
-                    </div>
-                    <div class="control-group">
-                        <span>Tamaño de fuente</span>
-                        <span id="font-size">60</span>
-                        <div class="button-group">
-                            <button id="increase-font">▲</button>
-                            <button id="decrease-font">▼</button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="reader">
-                    <div id="word-display"></div>
-                </div>
-
-                <div class="progress-bar" id="progress-container">
-                    <div id="progress"></div>
-                    <div id="preview-tooltip" class="tooltip"></div>
-                </div>
-
-                <div class="controls bottom-controls">
-                    <button id="play-pause">▶</button>
-                    <button id="prev">◀◀</button>
-                    <button id="next">▶▶</button>
-                    <button id="restart">↺</button>
-                    <button id="fullscreen">⛶</button>
-                </div>
-
-                <div class="file-drop-area">
-                    <input type="file" id="file-input" accept=".txt">
-                    <div class="drop-message">Arrastra y suelta archivos .txt aquí</div>
-                </div>
-                
-                <!-- Nueva sección para la biblioteca de libros -->
-                <div class="library-section">
-                    <h3>Mi Biblioteca</h3>
-                    <div id="books-collection" class="books-grid">
-                        <!-- Los libros se añadirán aquí dinámicamente -->
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Panel derecho con el texto completo (ahora fijo) -->
-        <div class="right-panel">
-            <div class="full-text-container">
-                <div id="full-text"></div>
-            </div>
-        </div>
-    </div>
-    <script src="script.js"></script>
+<body style="background:#121418;color:#e8eaee;font-family:system-ui,sans-serif">
+  <p>Redirigiendo a <a href="web/" style="color:#ff6b6b">Lectura Veloz</a>…</p>
 </body>
 </html>

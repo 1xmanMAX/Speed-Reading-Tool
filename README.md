@@ -1,60 +1,98 @@
-# FAST READING
+# Lectura Veloz
 
-## Descripción del Proyecto
+Lectura Veloz es una aplicación de lectura rápida, moderna, gratuita y sin conexión. Tiene **9 modos de lectura**, ejercicios de entrenamiento, un test de comprensión y estadísticas. Funciona en el **navegador (PWA)**, en **Windows, macOS y Linux**, y en **Android e iOS**. La misma interfaz ligera se empaqueta con [Tauri 2](https://v2.tauri.app), que usa un núcleo en Rust y el webview nativo del sistema.
 
-FAST READING es una aplicación web diseñada para mejorar tus habilidades de lectura rápida. Esta herramienta te permite cargar archivos de texto (.txt) y leerlos a diferentes velocidades, ajustando parámetros como palabras por minuto, tamaño de fuente y cantidad de palabras mostradas simultáneamente.
+## Modos de lectura
 
-## Características Principales
+| # | Modo | Cómo funciona |
+|---|------|---------------|
+| 1 | **Enfoque** (RSVP) | Muestra una palabra a la vez en el mismo sitio. La letra del *punto óptimo de reconocimiento* (ORP, el método de Spritz) va resaltada en rojo y hay guías de fijación. |
+| 2 | **Bloques** | Muestra grupos de 1 a 8 palabras con cortes inteligentes. Corta en la puntuación y no deja un bloque terminado en artículo o preposición («de», «la», «en»…). |
+| 3 | **Resaltado** | Muestra el texto completo con una marca que avanza a tu ritmo. Lo ya leído se atenúa. |
+| 4 | **Línea** | Un pautador recorre cada renglón (el método del dedo o la tarjeta) y el resto del texto se oscurece. |
+| 5 | **Biónica** | Pone en negrita el inicio de cada palabra. La intensidad es ajustable. |
+| 6 | **Degradado** | Cada renglón cambia de color y el siguiente continúa con ese color, al estilo de BeeLine. Los colores se adaptan al tema. |
+| 7 | **Teleprompter** | El texto se desplaza de forma continua a la velocidad elegida. |
+| 8 | **Periférica** | Muestra una columna estrecha con una línea central. Mantienes la vista en el centro y captas el renglón entero. |
+| 9 | **Destello** | El bloque aparece un instante y luego se oculta. Sirve para entrenar la amplitud visual y la atención. |
 
-- **Lectura Rápida**: Controla la velocidad de lectura (palabras por minuto - WPM)
-- **Visualización Personalizable**: Ajusta el tamaño de texto y la cantidad de palabras mostradas a la vez
-- **Biblioteca de Libros**: Guarda tus archivos de texto para acceder fácilmente a ellos más tarde
-- **Seguimiento de Progreso**: Recuerda tu posición en cada libro
-- **Temporizador de Lectura**: Establece un tiempo límite para tus sesiones de lectura
-- **Vista de Texto Completo**: Visualiza el texto completo con resaltado de la palabra actual
-- **Interfaz Intuitiva**: Diseño moderno y fácil de usar
+## Funciones
 
-## Cómo Usar
+- **Importación**: TXT (UTF-8 y Windows-1252), Markdown, HTML, EPUB, PDF e **imágenes con OCR** (Tesseract, en español e inglés). También puedes pegar texto o capturas con Ctrl+V desde cualquier pantalla.
+- **Integración con PixPin**:
+  - El atajo global **Ctrl+Alt+R** lee lo que tengas en el portapapeles.
+  - El enlace **`lecturaveloz://clipboard`** permite lanzar la lectura desde un script de PixPin.
+  - Detalles en [docs/PIXPIN.md](docs/PIXPIN.md).
+- **Ritmo inteligente**:
+  - Pausa más en comas, puntos, finales de párrafo, palabras largas y números.
+  - Aceleración progresiva opcional.
+  - Arranque suave al reanudar.
+  - Al pausar, retrocede hasta el inicio de la frase.
+- **Test de comprensión** al terminar: genera preguntas de completar a partir del propio texto y calcula las **PPM efectivas**, es decir, la velocidad multiplicada por la comprensión.
+- **Entrenamiento**:
+  - Tabla de Schulte.
+  - Destello con dificultad adaptativa.
+  - Expansión de bloques.
+  - Prueba de velocidad base con preguntas.
+- **Lectura en voz alta** sincronizada, con las voces del sistema.
+- **Estadísticas**: palabras leídas, tiempo, velocidad media, mejor marca, racha de días, gráfico semanal y comprensión media.
+- **Biblioteca**:
+  - Usa IndexedDB, así que admite libros grandes.
+  - Recuerda la posición de cada libro.
+  - Permite buscar.
+  - Importa automáticamente la biblioteca de la versión anterior.
+- **Apariencia**:
+  - 5 temas (Automático, Oscuro, Claro, Sepia y OLED), con contraste verificado según WCAG AA.
+  - Fuentes Atkinson Hyperlegible, Inter, Literata y Lexend.
+  - Tamaño, interlineado y ancho de columna ajustables.
+  - Modo inmersivo.
+- **Atajos de teclado**: pulsa `?` dentro de la app para verlos todos.
+  - `Espacio`: reproducir o pausar.
+  - `←` / `→`: palabra anterior o siguiente.
+  - `Shift` + `←` / `→`: frase anterior o siguiente.
+  - `↑` / `↓`: más o menos velocidad.
+  - `1` a `9`: cambiar de modo.
+- **Privacidad**: todo se guarda en tu dispositivo y no se envía nada a ningún servidor.
 
-1. **Cargar un Archivo**: Arrastra y suelta un archivo .txt en la zona designada o haz clic para seleccionar un archivo
-2. **Ajustar Configuración**:
-   - Velocidad de lectura (WPM)
-   - Tamaño de fuente
-   - Cantidad de palabras mostradas a la vez
-   - Tiempo de lectura
-3. **Controles de Lectura**:
-   - Reproducir/Pausar: Inicia o pausa la lectura automática
-   - Anterior/Siguiente: Navega entre palabras
-   - Reiniciar: Vuelve al inicio del texto
-   - Barra de progreso: Haz clic para saltar a cualquier parte del texto
+## Probarla
 
-## Biblioteca de Libros
+```bash
+npm run serve        # abre http://localhost:8080
+```
 
-La aplicación guarda automáticamente todos los archivos de texto que cargas, creando una biblioteca personal. Para cada libro, se almacena:
+También puedes abrir `web/index.html` directamente en el navegador. Desde ahí se puede **instalar como app (PWA)** en el móvil o el escritorio.
 
-- Título (nombre del archivo)
-- Contenido completo
-- Número total de palabras
-- Progreso actual
-- Fecha de última apertura
+## Compilar las apps nativas
 
-Puedes hacer clic en cualquier libro de tu biblioteca para cargarlo instantáneamente y continuar desde donde lo dejaste.
+Requisitos: [Node 20+](https://nodejs.org) y [Rust](https://rustup.rs). Después ejecuta `npm install`.
 
-## Tecnologías Utilizadas
+| Plataforma | Comando | Notas |
+|------------|---------|-------|
+| Escritorio (desarrollo) | `npm run dev` | En Linux necesitas `libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev`. |
+| Windows / macOS / Linux | `npm run build` | Genera `.msi`/`.exe`, `.dmg`/`.app`, y `.deb`/`.rpm`/`.AppImage` en `src-tauri/target/release/bundle/`. |
+| Android | `npm run android:init` y después `npm run android:build` | Necesita Android SDK y NDK, Java 17 y los targets de Rust para Android. |
+| iOS | `npm run ios:init` y después `npm run ios:build` | Solo en macOS con Xcode y una cuenta de desarrollador. |
 
-- HTML5
-- CSS3
-- JavaScript (Vanilla)
-- LocalStorage para persistencia de datos
+**Compilación automática:** al subir una etiqueta (`git tag v1.0.0 && git push --tags`), GitHub Actions compila Windows, macOS (Intel y Apple Silicon), Linux y un APK de Android, y crea un borrador de *release*. Además, cada push a `main` publica la versión web en GitHub Pages: activa *Settings → Pages → Source: GitHub Actions*.
 
-## Compatibilidad
+### ¿Por qué Tauri?
 
-FAST READING funciona en navegadores modernos como:
-- Chrome
-- Firefox
-- Edge
-- Safari
+Una app de Tauri ocupa unos pocos MB y usa mucha menos memoria que Electron, porque no incluye un navegador completo: usa el webview del sistema y un núcleo en Rust. La interfaz está hecha en JavaScript puro, sin frameworks ni paso de compilación, para que cargue al instante. El motor de lectura precalcula los tiempos de cada palabra y solo dibuja en pantalla la parte visible del texto, así que funciona con fluidez incluso con libros enteros.
 
-## Privacidad
+## Estructura
 
-Todos tus datos se almacenan localmente en tu navegador mediante LocalStorage. Ninguna información se envía a servidores externos.
+```
+web/                 Interfaz (HTML, CSS y JS sin dependencias)
+  js/text.js         Motor de texto: tokenización, ORP, bloques y tiempos
+  js/app.js          Reproductor, modos, biblioteca, estadísticas e interfaz
+  js/importers.js    TXT/MD/HTML/EPUB/PDF/OCR (las librerías se cargan solo cuando hacen falta)
+  js/training.js     Ejercicios de entrenamiento y generador de preguntas
+  js/storage.js      IndexedDB y localStorage
+  sw.js              Service worker (funciona sin conexión)
+src-tauri/           App nativa (Rust): atajo global, portapapeles y enlaces lecturaveloz://
+docs/PIXPIN.md       Guía de integración con PixPin
+```
+
+## Sobre la evidencia
+
+La investigación (Rayner et al., 2016) muestra que existe un equilibrio entre velocidad y comprensión: leer mucho más rápido suele costar comprensión, sobre todo en textos difíciles. Por eso la app mide la comprensión y recomienda subir la velocidad poco a poco. Lectura Veloz es una herramienta para practicar y leer con más concentración, no una promesa milagrosa.

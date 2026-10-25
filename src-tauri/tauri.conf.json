@@ -1,0 +1,66 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Lectura Veloz",
+  "version": "0.1.0",
+  "identifier": "com.lecturaveloz.app",
+  "build": {
+    "frontendDist": "../web"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Lectura Veloz",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 380,
+        "minHeight": 560,
+        "resizable": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Education",
+    "shortDescription": "Lector rápido RSVP",
+    "longDescription": "Lectura Veloz: lee textos palabra por palabra con punto de enfoque. Atajo global Ctrl+Alt+R para leer el portapapeles (p. ej. OCR de PixPin).",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "lecturaveloz"
+        ]
+      },
+      "mobile": [
+        {
+          "scheme": [
+            "lecturaveloz"
+          ],
+          "host": "clipboard",
+          "appLink": false
+        },
+        {
+          "scheme": [
+            "lecturaveloz"
+          ],
+          "host": "read",
+          "appLink": false
+        }
+      ]
+    }
+  }
+}
