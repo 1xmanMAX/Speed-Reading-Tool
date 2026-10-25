@@ -1,6 +1,6 @@
 # Lectura Veloz
 
-Lectura Veloz es una aplicación de lectura rápida, moderna, gratuita y sin conexión. Tiene **9 modos de lectura**, ejercicios de entrenamiento, un test de comprensión y estadísticas. Funciona en el **navegador (PWA)**, en **Windows, macOS y Linux**, y en **Android e iOS**. La misma interfaz ligera se empaqueta con [Tauri 2](https://v2.tauri.app), que usa un núcleo en Rust y el webview nativo del sistema.
+Lectura Veloz es una aplicación de lectura rápida, moderna, gratuita y sin conexión. Tiene **10 modos de lectura** (incluido un modo audiolibro), ejercicios de entrenamiento, un test de comprensión y estadísticas. Funciona en el **navegador (PWA)**, en **Windows, macOS y Linux**, y en **Android e iOS**. La misma interfaz ligera se empaqueta con [Tauri 2](https://v2.tauri.app), que usa un núcleo en Rust y el webview nativo del sistema.
 
 ## Modos de lectura
 
@@ -15,10 +15,27 @@ Lectura Veloz es una aplicación de lectura rápida, moderna, gratuita y sin con
 | 7 | **Teleprompter** | El texto se desplaza de forma continua a la velocidad elegida. |
 | 8 | **Periférica** | Muestra una columna estrecha con una línea central. Mantienes la vista en el centro y captas el renglón entero. |
 | 9 | **Destello** | El bloque aparece un instante y luego se oculta. Sirve para entrenar la amplitud visual y la atención. |
+| 0 | **Escuchar** | Audiolibro: una voz lee el libro y el texto se resalta palabra a palabra. |
+
+## Lector a pantalla completa y ventana flotante
+
+- El lector ocupa toda la pantalla. Los controles flotan en una píldora que **se oculta sola** mientras lees y vuelve al mover el ratón o tocar la pantalla. El progreso es una línea fina en el borde inferior; al pasar el ratón por encima puedes saltar a cualquier punto.
+- **Ventana flotante** (botón ▣ o tecla `P`): un mini reproductor siempre visible para seguir leyendo mientras haces otras cosas.
+  - **App de escritorio:** la ventana se convierte en un mini reproductor sin bordes y siempre encima.
+  - **Chrome y Edge:** usa *Document Picture-in-Picture*.
+  - **Safari y otros:** usa Picture-in-Picture de vídeo.
+  - Detalles en [docs/VENTANA-FLOTANTE.md](docs/VENTANA-FLOTANTE.md).
+
+## Lectura en voz alta con voces de Microsoft
+
+- **Microsoft Edge:** ofrece gratis las voces neuronales «Online (Natural)», por ejemplo *Microsoft Elvira Online (Natural)*. La app las detecta y las pone primero.
+- **Windows:** la app de escritorio y los demás navegadores usan las voces locales de Microsoft (Helena, Laura, Pablo, Sabina), que funcionan sin conexión.
+- **Microsoft Azure (opcional):** voces neuronales en cualquier dispositivo. Crea un recurso *Speech* gratuito (nivel F0, unos 500 000 caracteres al mes) en el portal de Azure y pega la clave y la región en *Ajustes → Voz*. La clave se guarda solo en tu dispositivo.
+- La voz funciona en el modo **Escuchar** y también en cualquier otro modo (botón 🎧 o tecla `V`). El texto avanza sincronizado con la voz.
 
 ## Funciones
 
-- **Importación**: TXT (UTF-8 y Windows-1252), Markdown, HTML, EPUB, PDF e **imágenes con OCR** (Tesseract, en español e inglés). También puedes pegar texto o capturas con Ctrl+V desde cualquier pantalla.
+- **Importación**: PDF, EPUB, **Word (.docx)**, TXT (UTF-8 y Windows-1252), Markdown, HTML e **imágenes con OCR** (Tesseract, en español e inglés). También puedes pegar texto o capturas con Ctrl+V desde cualquier pantalla.
 - **Integración con PixPin**:
   - El atajo global **Ctrl+Alt+R** lee lo que tengas en el portapapeles.
   - El enlace **`lecturaveloz://clipboard`** permite lanzar la lectura desde un script de PixPin.
@@ -51,8 +68,15 @@ Lectura Veloz es una aplicación de lectura rápida, moderna, gratuita y sin con
   - `←` / `→`: palabra anterior o siguiente.
   - `Shift` + `←` / `→`: frase anterior o siguiente.
   - `↑` / `↓`: más o menos velocidad.
-  - `1` a `9`: cambiar de modo.
+  - `1` a `9` y `0`: cambiar de modo.
+  - `M`: menú de modos. `V`: voz. `P`: ventana flotante.
 - **Privacidad**: todo se guarda en tu dispositivo y no se envía nada a ningún servidor.
+
+## Pruebas
+
+```bash
+npm test             # 49 comprobaciones en Chromium y capturas en tests/screenshots/
+```
 
 ## Probarla
 
@@ -87,6 +111,7 @@ web/                 Interfaz (HTML, CSS y JS sin dependencias)
   js/app.js          Reproductor, modos, biblioteca, estadísticas e interfaz
   js/importers.js    TXT/MD/HTML/EPUB/PDF/OCR (las librerías se cargan solo cuando hacen falta)
   js/training.js     Ejercicios de entrenamiento y generador de preguntas
+  js/speech.js       Voz: voces del sistema (Microsoft) y Azure neuronal
   js/storage.js      IndexedDB y localStorage
   sw.js              Service worker (funciona sin conexión)
 src-tauri/           App nativa (Rust): atajo global, portapapeles y enlaces lecturaveloz://

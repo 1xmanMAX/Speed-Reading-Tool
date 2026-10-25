@@ -45,8 +45,41 @@ function check(name, ok, detail) {
 
 const MODES = ['focus', 'chunk', 'guided', 'line', 'bionic', 'gradient', 'scroll', 'peri', 'flash'];
 
+// Voz simulada: Chromium sin interfaz no trae voces, así que imitamos la API del navegador
+const FAKE_SPEECH = () => {
+    const voices = [
+        { name: 'Microsoft Elvira Online (Natural) - Spanish (Spain)', lang: 'es-ES', voiceURI: 'ms-elvira', localService: false, default: true },
+        { name: 'Microsoft Helena - Spanish (Spain)', lang: 'es-ES', voiceURI: 'ms-helena', localService: true, default: false },
+    ];
+    class U { constructor(t) { this.text = t; this.rate = 1; this.pitch = 1; } }
+    let cur = null;
+    let timer = 0;
+    const synth = {
+        speaking: false, paused: false, pending: false,
+        getVoices: () => voices,
+        addEventListener() {}, removeEventListener() {},
+        speak(u) {
+            cur = u; synth.speaking = true;
+            const words = [...u.text.matchAll(/\S+/g)];
+            let i = 0;
+            setTimeout(() => u.onstart && u.onstart({}), 10);
+            const tick = () => {
+                if (cur !== u) return;
+                if (i < words.length) { u.onboundary && u.onboundary({ name: 'word', charIndex: words[i].index, charLength: words[i][0].length }); i++; timer = setTimeout(tick, 120 / (u.rate || 1)); }
+                else { synth.speaking = false; cur = null; u.onend && u.onend({}); }
+            };
+            timer = setTimeout(tick, 20);
+        },
+        cancel() { clearTimeout(timer); cur = null; synth.speaking = false; },
+        pause() {}, resume() {},
+    };
+    Object.defineProperty(window, 'speechSynthesis', { value: synth, configurable: true });
+    window.SpeechSynthesisUtterance = U;
+};
+
 async function newPage(browser, viewport, errors) {
     const ctx = await browser.newContext({ viewport, colorScheme: 'dark', locale: 'es-ES' });
+    await ctx.addInitScript(FAKE_SPEECH);
     const page = await ctx.newPage();
     page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
@@ -57,6 +90,11 @@ async function newPage(browser, viewport, errors) {
 
 const shot = (page, name) => page.screenshot({ path: path.join(OUT, name + '.png') });
 const state = (page) => page.evaluate(() => ({ pos: LV.app.state.pos, playing: LV.app.state.playing, mode: LV.app.settings.mode, n: LV.app.state.tok ? LV.app.state.tok.words.length : 0 }));
+
+async function goHome(page) {
+    if (await page.isVisible('#reader-back')) await page.click('#reader-back');
+    await page.waitForSelector('#view-home:not([hidden])');
+}
 
 async function openSample(page) {
     await page.click('#load-sample');
@@ -75,7 +113,7 @@ async function openSample(page) {
     await page.waitForTimeout(600);
     await shot(page, '01-inicio');
     check('La página de inicio carga', await page.isVisible('#view-home'));
-    check('Se muestran las 9 tarjetas de modos', (await page.$$('.mode-card')).length === 9);
+    check('Se muestran las 10 tarjetas de modos', (await page.$$('.mode-card')).length === 10);
 
     await openSample(page);
     const s0 = await state(page);
@@ -128,11 +166,11 @@ async function openSample(page) {
     check('Clic en la barra de progreso salta a la mitad', Math.abs(mid.pos / mid.n - 0.5) < 0.05, mid);
 
     // Paneles
-    await page.click('[data-open="settings"]');
+    await page.locator('[data-open="settings"]:visible').first().click();
     await page.waitForTimeout(400);
     await shot(page, '11-ajustes');
     await page.keyboard.press('Escape');
-    await page.click('[data-open="shortcuts"]');
+    await page.keyboard.press('?');
     await page.waitForTimeout(300);
     await shot(page, '12-atajos');
     await page.keyboard.press('Escape');
@@ -145,6 +183,57 @@ async function openSample(page) {
         check(`Tema «${t}» aplicado`, (await page.evaluate(() => document.documentElement.dataset.theme)) === t);
     }
     await page.evaluate(() => { LV.app.setSetting('theme', 'auto'); LV.app.setMode('focus'); });
+
+    // HUD que se oculta al leer
+    await page.evaluate(() => { LV.app.setSetting('immersive', true); LV.app.setMode('focus'); LV.app.play(); });
+    await page.waitForTimeout(3300);
+    check('Los controles se ocultan mientras lees', await page.evaluate(() => document.querySelector('#view-reader').classList.contains('hud-hidden')));
+    await shot(page, '16a-lectura-inmersiva');
+    await page.mouse.move(700, 500);
+    await page.mouse.move(720, 520);
+    check('Los controles reaparecen al mover el ratón', !(await page.evaluate(() => document.querySelector('#view-reader').classList.contains('hud-hidden'))));
+    await page.evaluate(() => { LV.app.pause(); LV.app.setSetting('immersive', false); });
+
+    // Menú de modos
+    await page.click('#mode-btn');
+    await page.waitForTimeout(250);
+    await shot(page, '16b-menu-modos');
+    await page.click('.mode-item[data-mode="listen"]');
+    check('El menú cambia al modo Escuchar', (await state(page)).mode === 'listen');
+
+    // Modo Escuchar con voces de Microsoft
+    await page.evaluate(() => LV.app.seek(0));
+    await page.evaluate(() => LV.app.play());
+    await page.waitForTimeout(2500);
+    const heard = await state(page);
+    await shot(page, '16c-modo-escuchar');
+    await page.evaluate(() => LV.app.pause());
+    check('Escuchar: la voz avanza el texto palabra a palabra', heard.pos > 5, heard);
+    const voices = await page.$$eval('#voice-select option', (o) => o.map((x) => x.textContent));
+    check('Lista las voces de Microsoft', voices.some((v) => /Microsoft/.test(v)), voices);
+    await page.locator('[data-open="settings"]:visible').first().click();
+    await page.evaluate(() => document.querySelector('#voice-select').scrollIntoView({ block: 'center' }));
+    await page.waitForTimeout(300);
+    await shot(page, '16d-ajustes-voz');
+    await page.keyboard.press('Escape');
+
+    // Ventana flotante (Document Picture-in-Picture en Chrome/Edge)
+    await page.evaluate(() => LV.app.setMode('focus'));
+    const popup = page.context().waitForEvent('page', { timeout: 5000 }).catch(() => null);
+    await page.click('#btn-pip');
+    const pip = await popup;
+    check('Se abre la ventana flotante', !!pip && (await page.evaluate(() => LV.app.state.mini && LV.app.state.mini.kind)) === 'docpip');
+    if (pip) {
+        await pip.click('#mini-play');
+        await page.waitForTimeout(1500);
+        await pip.screenshot({ path: path.join(OUT, '16e-ventana-flotante.png') });
+        await shot(page, '16f-ventana-principal-con-flotante');
+        check('La ventana flotante controla la lectura', (await state(page)).playing);
+        await pip.click('#mini-expand');
+        await page.waitForTimeout(300);
+        check('Volver desde la ventana flotante', !(await page.evaluate(() => LV.app.state.mini)));
+        await page.evaluate(() => LV.app.pause());
+    }
 
     // Fin de lectura y test de comprensión
     await page.evaluate(() => { LV.app.setSetting('wpm', 300); LV.app.seek(LV.app.state.tok.words.length - 260); LV.app.setSetting('wpm', 1500); LV.app.play(); });
@@ -167,17 +256,17 @@ async function openSample(page) {
     await page.evaluate(() => LV.app.setSetting('wpm', 300));
 
     // Importación de archivos
-    await page.click('#go-home');
-    const files = ['latin1.txt', 'doc.md', 'page.html', 'book.epub', 'doc.pdf'];
+    await goHome(page);
+    const files = ['latin1.txt', 'doc.md', 'page.html', 'book.epub', 'doc.pdf', 'documento.docx'];
     for (const f of files) {
-        await page.click('#go-home');
+        await goHome(page);
         await page.setInputFiles('#file-input', path.join(FIX, f));
         await page.waitForFunction(() => !document.querySelector('#view-reader').hidden, null, { timeout: 30000 });
         const t = await page.evaluate(() => ({ title: LV.app.state.book.title, n: LV.app.state.tok.words.length, first: LV.app.state.tok.words.slice(0, 6).join(' ') }));
         check(`Importa ${f}`, t.n > 3, t);
         if (f === 'latin1.txt') check('Texto Windows-1252 decodificado (ñ y acentos)', /[ñóáé]/.test(t.first + (await page.evaluate(() => LV.app.state.book.text))), t.first);
     }
-    await page.click('#go-home');
+    await goHome(page);
     await page.setInputFiles('#file-input', path.join(FIX, 'shot.png'));
     await page.waitForTimeout(400);
     await shot(page, '19-ocr-en-progreso');
@@ -188,8 +277,8 @@ async function openSample(page) {
     await shot(page, '20-texto-desde-captura');
 
     // Pegar texto
-    await page.click('#go-home');
-    await page.click('[data-open="paste"]');
+    await goHome(page);
+    await page.locator('[data-open="paste"]:visible').first().click();
     await page.fill('#paste-title', 'Texto pegado de prueba');
     await page.fill('#paste-text', 'La lectura veloz es una habilidad que se entrena. Con práctica diaria, la vista aprende a avanzar con menos pausas. Lo importante es mantener la comprensión.');
     await shot(page, '21-pegar-texto');
@@ -198,7 +287,7 @@ async function openSample(page) {
     check('Pegar texto abre el lector', true);
 
     // Biblioteca
-    await page.click('[data-open="library"]');
+    await page.keyboard.press('b');
     await page.waitForTimeout(400);
     const books = (await page.$$('#library-list .book-card')).length;
     await shot(page, '22-biblioteca');
@@ -216,10 +305,10 @@ async function openSample(page) {
     check('Recuerda la posición al recargar', (await state(page)).pos === 15, (await state(page)).pos);
 
     // Inicio con historial y estadísticas
-    await page.click('#go-home');
+    await goHome(page);
     await page.waitForTimeout(400);
     await shot(page, '23-inicio-con-biblioteca');
-    await page.click('[data-open="stats"]');
+    await page.locator('[data-open="stats"]:visible').first().click();
     await page.waitForTimeout(400);
     await shot(page, '24-estadisticas');
     check('Las estadísticas registran sesiones', (await page.$$('.session-item')).length > 0);
@@ -271,7 +360,7 @@ async function openSample(page) {
     }
     const overflow = await mob.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
     check('Sin desplazamiento horizontal en móvil', !overflow);
-    await mob.click('[data-open="settings"]');
+    await mob.locator('[data-open="settings"]:visible').first().click();
     await mob.waitForTimeout(400);
     await shot(mob, '34-movil-ajustes');
     await mob.context().close();

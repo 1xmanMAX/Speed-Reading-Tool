@@ -23,7 +23,9 @@
         { id: 'scroll', name: 'Teleprompter', kind: 'scroll', desc: 'El texto se desplaza de forma continua a la velocidad elegida. Ideal para relajarse.', demo: '<span class="dim">↑ desplazamiento</span><br>suave y continuo' },
         { id: 'peri', name: 'Periférica', kind: 'peri', chunk: true, desc: 'Columna estrecha: fija la vista en el centro y capta cada renglón completo.', demo: 'capta · | · el renglón' },
         { id: 'flash', name: 'Destello', kind: 'rsvp', chunk: true, flash: true, desc: 'El bloque aparece un instante y se oculta. Entrena la amplitud y la atención.', demo: '<span class="dim">#### ## ####</span>' },
+        { id: 'listen', name: 'Escuchar', kind: 'page', voice: true, desc: 'Audiolibro: una voz lee el libro y el texto se resalta palabra a palabra.', demo: '🎧 <span class="hl">lee</span> <span class="dim">en voz alta</span>' },
     ];
+    const MODE_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
     const MODE = Object.fromEntries(MODES.map((m) => [m.id, m]));
 
     const DEFAULTS = {
@@ -48,6 +50,11 @@
         dimInactive: true,
         bionicRatio: 0.45,
         voice: false,
+        voiceProvider: 'system',
+        voiceId: '',
+        voiceRate: 1,
+        azureKey: '',
+        azureRegion: '',
         immersive: true,
     };
 
@@ -93,7 +100,18 @@
         home: $('#view-home'),
         reader: $('#view-reader'),
         title: $('#book-title'),
+        readerTitle: $('#reader-title'),
         modeBar: $('#mode-bar'),
+        modeMenu: $('#mode-menu'),
+        modeBtn: $('#mode-btn'),
+        modeName: $('#mode-name'),
+        voiceBtn: $('#btn-voice'),
+        wpmUnit: $('#wpm-unit'),
+        pipNote: $('#pip-note'),
+        mini: $('#mini-player'),
+        miniWord: $('#mini-word'),
+        miniFill: $('#mini-fill'),
+        miniWpm: $('#mini-wpm'),
         stage: $('#stage'),
         rsvp: $('#rsvp'),
         rsvpWord: $('#rsvp-word'),
@@ -215,7 +233,10 @@
         lineHeight: (v) => Number(v).toFixed(2),
         columnWidth: (v) => `${v} car.`,
         bionicRatio: (v) => `${Math.round(v * 100)}%`,
+        voiceRate: (v) => `${Number(v).toFixed(1)}×`,
     };
+
+    const voiceActive = () => !!(mode().voice || settings.voice) && !!LV.speech && LV.speech.supported !== false;
 
     function syncSettingsUI() {
         $$('[data-setting]').forEach((input) => {
@@ -232,9 +253,23 @@
             if (settings[f.dataset.depends]) f.removeAttribute('data-disabled');
             else f.setAttribute('data-disabled', '');
         });
+        $$('[data-show-if]').forEach((f) => {
+            const [k, v] = f.dataset.showIf.split('=');
+            f.hidden = String(settings[k]) !== v;
+        });
         $$('.theme-swatch').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.theme === settings.theme)));
-        el.wpmValue.textContent = settings.wpm;
+        syncSpeedLabel();
         el.chunkValue.textContent = settings.chunkSize;
+        el.voiceBtn.classList.toggle('is-on', voiceActive());
+        el.voiceBtn.setAttribute('aria-pressed', String(voiceActive()));
+    }
+
+    /** En modo voz, el selector de velocidad controla la velocidad de la voz */
+    function syncSpeedLabel() {
+        const v = voiceActive();
+        el.wpmValue.textContent = v ? Number(settings.voiceRate).toFixed(1) + '×' : settings.wpm;
+        el.wpmUnit.textContent = v ? 'voz' : 'ppm';
+        if (el.miniWpm) el.miniWpm.textContent = el.wpmValue.textContent;
     }
 
     function paintRange(input) {
@@ -281,6 +316,16 @@
                 break;
             case 'voice':
                 restartIfPlaying();
+                updateMeta();
+                break;
+            case 'voiceRate': case 'voiceId':
+                configureSpeech();
+                restartIfPlaying();
+                updateMeta();
+                break;
+            case 'voiceProvider': case 'azureKey': case 'azureRegion':
+                configureSpeech();
+                populateVoices();
                 break;
         }
     }
@@ -306,14 +351,21 @@
         });
 
         $('#reset-settings').addEventListener('click', () => {
-            const keepMode = settings.mode;
-            Object.assign(settings, DEFAULTS, { mode: keepMode });
+            const keep = { mode: settings.mode, azureKey: settings.azureKey, azureRegion: settings.azureRegion };
+            Object.assign(settings, DEFAULTS, keep);
             S.settings.save(settings);
             applyAppearance();
             syncSettingsUI();
             buildPrefix();
             relayout();
             toast('Ajustes restablecidos');
+        });
+
+        $('#voice-select').addEventListener('change', (e) => setSetting('voiceId', e.target.value));
+        $('#voice-test').addEventListener('click', () => {
+            if (!LV.speech) return;
+            configureSpeech();
+            try { LV.speech.test(); } catch (err) { toast(err.message || 'No se pudo reproducir la voz.', { error: true }); }
         });
 
         $('#clear-stats').addEventListener('click', () => {
@@ -422,7 +474,7 @@
             beginSession();
             updatePlayButton();
             render();
-            if (settings.voice && 'speechSynthesis' in window) speakFrom(state.pos);
+            if (voiceActive()) speakFrom(state.pos);
             else scheduleNext();
             if (settings.mode === 'scroll') startScrollLoop();
         };
@@ -459,7 +511,7 @@
         clearTimeout(state.flashTimer);
         stopSpeech();
         state.wordsSinceResume = 0;
-        if (settings.voice && 'speechSynthesis' in window) speakFrom(state.pos);
+        if (voiceActive()) speakFrom(state.pos);
         else scheduleNext();
     }
 
@@ -570,49 +622,92 @@
         el.countdown.hidden = true;
     }
 
-    /* --- Voz (síntesis del navegador) --- */
-    let voiceCache = null;
-    function pickVoice() {
-        if (voiceCache) return voiceCache;
-        const voices = speechSynthesis.getVoices();
-        voiceCache = voices.find((v) => /^es(-|_)?/i.test(v.lang) && /natural|google|online/i.test(v.name))
-            || voices.find((v) => /^es/i.test(v.lang)) || null;
-        return voiceCache;
+    /* --- Voz: voces del sistema (Microsoft en Windows/Edge) o Azure --- */
+    function configureSpeech() {
+        if (!LV.speech) return;
+        LV.speech.configure({
+            provider: settings.voiceProvider,
+            voiceId: settings.voiceId,
+            rate: Number(settings.voiceRate) || 1,
+            azureKey: settings.azureKey,
+            azureRegion: settings.azureRegion,
+        });
     }
 
+    async function populateVoices() {
+        const sel = $('#voice-select');
+        if (!LV.speech || !sel) return;
+        let voices = [];
+        try { voices = await LV.speech.listVoices(); } catch (e) { voices = []; }
+        const wanted = settings.voiceProvider === 'azure' ? 'azure' : 'system';
+        const list = voices.filter((v) => v.provider === wanted);
+        if (!list.length) {
+            sel.innerHTML = `<option value="">${wanted === 'azure' ? 'Añade tu clave de Azure para ver las voces' : 'No hay voces disponibles en este navegador'}</option>`;
+            return;
+        }
+        const label = (v) => v.name + (v.natural ? ' ✦' : '');
+        const groups = [
+            ['Microsoft · español', list.filter((v) => v.microsoft && /^es/i.test(v.lang))],
+            ['Español', list.filter((v) => !v.microsoft && /^es/i.test(v.lang))],
+            ['Microsoft · otros idiomas', list.filter((v) => v.microsoft && !/^es/i.test(v.lang))],
+            ['Otros idiomas', list.filter((v) => !v.microsoft && !/^es/i.test(v.lang))],
+        ].filter(([, g]) => g.length);
+        sel.innerHTML = groups.map(([name, g]) => `<optgroup label="${esc(name)}">${g.map((v) => `<option value="${esc(v.id)}">${esc(label(v))}</option>`).join('')}</optgroup>`).join('');
+        if (!list.some((v) => v.id === settings.voiceId)) {
+            settings.voiceId = list[0].id;
+            S.settings.save(settings);
+            configureSpeech();
+        }
+        sel.value = settings.voiceId;
+        const hasNatural = voices.some((v) => v.natural && v.microsoft);
+        $('#voice-hint').textContent = hasNatural
+            ? '✦ Voces neuronales de Microsoft disponibles: suenan muy naturales.'
+            : 'Consejo: en Microsoft Edge aparecen las voces «Online (Natural)» de Microsoft. En la app de Windows tienes Helena, Laura, Pablo… o usa Azure para voces neuronales.';
+    }
+
+    let speechHandle = null;
+
     function speakFrom(start) {
-        if (!state.playing) return;
+        if (!state.playing || !LV.speech) return;
         const words = state.tok.words;
-        const end = Math.min(n(), T.nextSentence(state.tok, start) === start ? start + 1 : sentenceEndFrom(start));
+        const end = Math.min(n(), sentenceEndFrom(start));
         const offsets = [];
         let text = '';
         for (let i = start; i < end; i++) {
             offsets.push(text.length);
             text += words[i] + ' ';
         }
-        const u = new SpeechSynthesisUtterance(text);
-        const v = pickVoice();
-        if (v) u.voice = v;
-        u.lang = v ? v.lang : 'es-ES';
-        u.rate = clamp(settings.wpm / 170, 0.5, 3.5);
-        u.onboundary = (e) => {
-            if (!state.playing || e.name === 'sentence') return;
-            const k = lowerBound(offsets, e.charIndex);
-            const idx = start + k;
-            if (idx > state.pos) countRead(idx - state.pos);
-            if (idx !== state.pos) setPos(unitStart(idx));
-        };
-        u.onend = () => {
-            if (!state.playing || !state.speaking) return;
-            countRead(Math.max(0, end - state.pos));
-            if (end >= n()) { finish(); return; }
-            setPos(end);
-            if (checkSessionLimit()) return;
-            speakFrom(end);
-        };
+        // Precargar la frase siguiente (evita silencios con Azure)
+        if (end < n()) {
+            const nEnd = sentenceEndFrom(end);
+            LV.speech.prefetch && LV.speech.prefetch(words.slice(end, nEnd).join(' ') + ' ');
+        }
         state.speaking = true;
-        speechSynthesis.cancel();
-        speechSynthesis.speak(u);
+        const myHandle = {};
+        speechHandle = myHandle;
+        const live = () => state.playing && state.speaking && speechHandle === myHandle;
+        myHandle.h = LV.speech.speak(text, {
+            lang: 'es-ES',
+            onWord: (charIndex) => {
+                if (!live()) return;
+                const idx = start + lowerBound(offsets, charIndex);
+                if (idx > state.pos) countRead(idx - state.pos);
+                if (idx !== state.pos) setPos(unitStart(idx));
+            },
+            onEnd: () => {
+                if (!live()) return;
+                countRead(Math.max(0, end - state.pos));
+                if (end >= n()) { finish(); return; }
+                setPos(end);
+                if (checkSessionLimit()) return;
+                speakFrom(end);
+            },
+            onError: (err) => {
+                if (!live()) return;
+                pause(false);
+                toast((err && err.message) || 'La voz no está disponible.', { error: true, duration: 5000 });
+            },
+        });
     }
 
     function sentenceEndFrom(i) {
@@ -625,7 +720,8 @@
     function stopSpeech() {
         if (!state.speaking) return;
         state.speaking = false;
-        try { speechSynthesis.cancel(); } catch (e) { /* sin soporte */ }
+        speechHandle = null;
+        try { LV.speech && LV.speech.stop(); } catch (e) { /* sin soporte */ }
     }
 
     /* =====================================================
@@ -688,7 +784,7 @@
     }
 
     function updateSessionClock() {
-        el.sessionTime.textContent = fmtClock(sessionMs());
+        if (el.sessionTime) el.sessionTime.textContent = fmtClock(sessionMs());
     }
     setInterval(() => { if (state.playing) updateSessionClock(); }, 1000);
 
@@ -721,6 +817,7 @@
         el.scrollBox.hidden = m.kind !== 'scroll';
         el.peri.hidden = m.kind !== 'peri';
         el.chunkStepper.hidden = !m.chunk;
+        $('#chunk-sep').hidden = !m.chunk;
 
         if (m.kind === 'rsvp') renderRsvp();
         else if (m.kind === 'page') renderPage(el.page, el.pageWrap, opts);
@@ -894,8 +991,21 @@
         updateCursor(start, end, rebuilt || opts.jump, m);
 
         if (m.id === 'line') positionBand(start);
+        if (m.id === 'listen') markSentence(start, rebuilt || opts.jump);
         if (m.kind === 'page') autoScroll(wrap, start, rebuilt || opts.jump);
         else if (!state.playing || rebuilt || opts.jump) snapScroll();
+    }
+
+    /** Modo Escuchar: fondo suave en la frase que se está leyendo */
+    function markSentence(i, full) {
+        const s0 = T.sentenceStart(state.tok, i + 1);
+        const s1 = sentenceEndFrom(s0);
+        const prev = state.sentRange || [0, 0];
+        if (!full && prev[0] === s0 && prev[1] === s1) return;
+        if (full) $$('.w.sent', state.win.el).forEach((x) => x.classList.remove('sent'));
+        else for (let k = prev[0]; k < prev[1]; k++) { const x = spanAt(k); if (x) x.classList.remove('sent'); }
+        for (let k = s0; k < s1; k++) { const x = spanAt(k); if (x) x.classList.add('sent'); }
+        state.sentRange = [s0, s1];
     }
 
     function updateCursor(start, end, full, m) {
@@ -1046,8 +1156,11 @@
         el.scrubThumb.style.left = frac * 100 + '%';
         el.metaProgress.textContent = Math.round(frac * 100) + '%';
         el.metaWords.textContent = `${fmtNum(pos + 1)} / ${fmtNum(total)} palabras`;
-        const left = state.prefix ? (state.prefix[total] - state.prefix[pos]) * (60000 / settings.wpm) : 0;
-        el.metaLeft.textContent = left > 0 ? `Quedan ${fmtDuration(left)}` : 'Terminado';
+        const left = voiceActive()
+            ? ((total - pos) / (165 * (Number(settings.voiceRate) || 1))) * 60000
+            : state.prefix ? (state.prefix[total] - state.prefix[pos]) * (60000 / settings.wpm) : 0;
+        el.metaLeft.textContent = left > 0 ? `quedan ${fmtDuration(left)}` : 'terminado';
+        renderMini();
     }
 
     function updatePlayButton() {
@@ -1055,6 +1168,9 @@
         el.play.setAttribute('aria-label', state.playing ? 'Pausar' : 'Reproducir');
         el.app.classList.toggle('is-playing', state.playing);
         if (state.win.pacer) state.win.pacer.classList.toggle('is-on', state.playing);
+        el.mini.classList.toggle('is-playing', state.playing);
+        if ('mediaSession' in navigator) navigator.mediaSession.playbackState = state.playing ? 'playing' : 'paused';
+        hud.poke();
     }
 
     /* --- Tarjeta de fin y test de comprensión --- */
@@ -1162,16 +1278,29 @@
        Barra de modos y controles
        ===================================================== */
     function buildModeBar() {
-        el.modeBar.innerHTML = MODES.map((m, i) => `<button class="mode-pill" role="tab" data-mode="${m.id}" aria-selected="false" title="${esc(m.desc)} (${i + 1})"><span class="mode-dot"></span>${m.name}</button>`).join('');
+        el.modeBar.innerHTML = MODES.map((m, i) => `
+            <button class="mode-item" role="menuitemradio" data-mode="${m.id}" aria-checked="false">
+                <span class="mode-dot"></span><strong>${m.name}</strong><kbd>${MODE_KEYS[i]}</kbd>
+                <small>${esc(m.desc)}</small>
+            </button>`).join('');
         el.modeBar.addEventListener('click', (e) => {
             const b = e.target.closest('[data-mode]');
-            if (b) setMode(b.dataset.mode);
+            if (!b) return;
+            setMode(b.dataset.mode);
+            toggleModeMenu(false);
+        });
+        el.modeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleModeMenu();
+        });
+        document.addEventListener('pointerdown', (e) => {
+            if (!el.modeMenu.hidden && !e.target.closest('#mode-menu, #mode-btn')) toggleModeMenu(false);
         });
 
         $('#mode-cards').innerHTML = MODES.map((m, i) => `
             <button class="mode-card" data-mode="${m.id}">
                 <div class="mode-demo">${m.demo}</div>
-                <h3>${m.name}<span class="mode-key">${i + 1}</span></h3>
+                <h3>${m.name}<span class="mode-key">${MODE_KEYS[i]}</span></h3>
                 <p>${esc(m.desc)}</p>
             </button>`).join('');
         $('#mode-cards').addEventListener('click', async (e) => {
@@ -1183,6 +1312,21 @@
             if (recent) openBook(recent);
             else openSample();
         });
+        syncModeUI();
+    }
+
+    function toggleModeMenu(force) {
+        const open = force === undefined ? el.modeMenu.hidden : force;
+        el.modeMenu.hidden = !open;
+        el.modeBtn.setAttribute('aria-expanded', String(open));
+        if (open) hud.show(true);
+        else hud.poke();
+    }
+
+    function syncModeUI() {
+        $$('.mode-item').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.mode === settings.mode)));
+        el.modeName.textContent = mode().name;
+        syncSettingsUI();
     }
 
     function setMode(id) {
@@ -1192,9 +1336,7 @@
         stopScrollLoop();
         settings.mode = id;
         S.settings.save(settings);
-        $$('.mode-pill').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.mode === id)));
-        const active = $(`.mode-pill[data-mode="${id}"]`);
-        if (active) active.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+        syncModeUI();
         invalidateWindow();
         if (state.tok) {
             state.pos = unitStart(state.pos);
@@ -1202,6 +1344,215 @@
             if (MODE[id].kind === 'page' || MODE[id].kind === 'scroll') state.pos = unitStart(state.pos);
         }
         if (wasPlaying) play();
+    }
+
+    /* =====================================================
+       HUD: controles flotantes que se ocultan al leer
+       ===================================================== */
+    const hud = (() => {
+        let timer = 0;
+        let pinned = false;
+        const reader = $('#view-reader');
+        const hide = () => {
+            if (!state.playing || pinned || !el.modeMenu.hidden || !settings.immersive) return;
+            reader.classList.add('hud-hidden');
+        };
+        return {
+            show(pin) {
+                pinned = !!pin;
+                reader.classList.remove('hud-hidden');
+                clearTimeout(timer);
+                timer = setTimeout(hide, 2600);
+            },
+            poke() { this.show(false); },
+            hideNow() { pinned = false; hide(); },
+        };
+    })();
+
+    /* =====================================================
+       Ventana flotante (mini reproductor)
+       ===================================================== */
+    const MINI_W = 480;
+    const MINI_H = 190;
+
+    function miniSupport() {
+        if (window.__TAURI__ && window.__TAURI__.core) return 'tauri';
+        if ('documentPictureInPicture' in window) return 'docpip';
+        if (document.pictureInPictureEnabled && HTMLCanvasElement.prototype.captureStream) return 'video';
+        return null;
+    }
+
+    async function openMini() {
+        if (state.mini) return closeMini();
+        if (!state.tok) return;
+        const kind = miniSupport();
+        try {
+            if (kind === 'tauri') {
+                const ok = await window.__TAURI__.core.invoke('set_mini_mode', { enabled: true });
+                if (!ok) throw new Error('La ventana flotante no está disponible en este dispositivo.');
+                document.body.classList.add('mini-mode');
+                el.mini.hidden = false;
+                state.mini = { kind };
+            } else if (kind === 'docpip') {
+                const win = await window.documentPictureInPicture.requestWindow({ width: MINI_W, height: MINI_H });
+                const doc = win.document;
+                [...document.querySelectorAll('link[rel="stylesheet"], style')].forEach((n) => doc.head.appendChild(n.cloneNode(true)));
+                doc.title = 'Lectura Veloz';
+                const root = doc.documentElement;
+                root.className = 'pip-doc';
+                root.dataset.theme = document.documentElement.dataset.theme;
+                root.dataset.font = document.documentElement.dataset.font;
+                root.setAttribute('style', document.documentElement.getAttribute('style') || '');
+                el.mini.hidden = false;
+                doc.body.appendChild(el.mini);
+                doc.addEventListener('keydown', handleKey);
+                win.addEventListener('pagehide', () => closeMini(true), { once: true });
+                state.mini = { kind, win };
+                el.pipNote.hidden = false;
+            } else if (kind === 'video') {
+                await openVideoPip();
+                el.pipNote.hidden = false;
+            } else {
+                toast('Tu navegador no admite ventanas flotantes. Usa Chrome, Edge o la app de escritorio.', { duration: 5000 });
+                return;
+            }
+            $('#btn-pip').classList.add('is-on');
+            renderMini();
+        } catch (err) {
+            state.mini = null;
+            el.mini.hidden = true;
+            toast((err && err.message) || 'No se pudo abrir la ventana flotante.', { error: true });
+        }
+    }
+
+    async function closeMini(fromPip) {
+        const m = state.mini;
+        if (!m) return;
+        state.mini = null;
+        if (m.kind === 'tauri') {
+            document.body.classList.remove('mini-mode');
+            try { await window.__TAURI__.core.invoke('set_mini_mode', { enabled: false }); } catch (e) { /* ventana cerrada */ }
+        } else if (m.kind === 'docpip') {
+            m.win.document.removeEventListener('keydown', handleKey);
+            document.body.appendChild(el.mini);
+            if (!fromPip) m.win.close();
+        } else if (m.kind === 'video') {
+            if (document.pictureInPictureElement && !fromPip) await document.exitPictureInPicture().catch(() => {});
+            m.video.remove();
+        }
+        el.mini.hidden = true;
+        el.pipNote.hidden = true;
+        $('#btn-pip').classList.remove('is-on');
+        render({ jump: true });
+    }
+
+    /** Contenido del mini reproductor: palabra con ORP, bloque o fragmento resaltado */
+    function miniContent() {
+        const { words } = state.tok;
+        const m = mode();
+        const pos = state.pos;
+        if (voiceActive() || m.id === 'listen') {
+            const s0 = Math.max(pos - 3, T.sentenceStart(state.tok, pos + 1));
+            const s1 = Math.min(n(), pos + 5);
+            return { text: true, html: words.slice(s0, s1).map((w, k) => (s0 + k === pos ? `<span class="hl">${esc(w)}</span>` : s0 + k < pos ? `<span class="dim">${esc(w)}</span>` : esc(w))).join(' ') };
+        }
+        const end = unitEnd(pos);
+        if (end - pos > 1) return { text: true, html: esc(words.slice(pos, end).join(' ')) };
+        const word = words[pos] || '';
+        const chars = [...word];
+        const o = Math.min(T.orpIndex(word), chars.length - 1);
+        return { text: false, html: `<span class="l">${esc(chars.slice(0, o).join(''))}</span><span class="p">${esc(chars[o] || '')}</span><span class="r">${esc(chars.slice(o + 1).join(''))}</span>`, parts: [chars.slice(0, o).join(''), chars[o] || '', chars.slice(o + 1).join('')] };
+    }
+
+    function renderMini() {
+        if (!state.mini || !state.tok) return;
+        const c = miniContent();
+        const total = n();
+        const frac = total > 1 ? state.pos / (total - 1) : 0;
+        if (state.mini.kind === 'video') return drawVideoPip(c, frac);
+        el.mini.classList.toggle('is-text', c.text);
+        el.miniWord.innerHTML = c.html;
+        el.miniFill.style.width = frac * 100 + '%';
+        syncSpeedLabel();
+    }
+
+    /* Respaldo para Safari y otros: Picture-in-Picture de vídeo dibujado en un canvas */
+    async function openVideoPip() {
+        const canvas = document.createElement('canvas');
+        canvas.width = MINI_W * 2;
+        canvas.height = MINI_H * 2;
+        const video = document.createElement('video');
+        video.muted = true;
+        video.playsInline = true;
+        video.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none';
+        document.body.appendChild(video);
+        state.mini = { kind: 'video', canvas, ctx: canvas.getContext('2d'), video };
+        renderMini();
+        video.srcObject = canvas.captureStream(30);
+        await video.play();
+        await video.requestPictureInPicture();
+        video.addEventListener('leavepictureinpicture', () => closeMini(true), { once: true });
+        if ('mediaSession' in navigator) {
+            const ms = navigator.mediaSession;
+            const set = (a, fn) => { try { ms.setActionHandler(a, fn); } catch (e) { /* no soportado */ } };
+            set('play', () => play());
+            set('pause', () => pause());
+            set('previoustrack', () => stepSentence(-1));
+            set('nexttrack', () => stepSentence(1));
+        }
+    }
+
+    function drawVideoPip(c, frac) {
+        const { ctx, canvas } = state.mini;
+        const css = getComputedStyle(document.documentElement);
+        const v = (k) => css.getPropertyValue(k).trim();
+        const W = canvas.width, H = canvas.height;
+        ctx.fillStyle = v('--bg');
+        ctx.fillRect(0, 0, W, H);
+        const font = v('--font-read') || 'sans-serif';
+        ctx.textBaseline = 'middle';
+        if (!c.text) {
+            const size = 86;
+            ctx.font = `500 ${size}px ${font}`;
+            const x = W * 0.38;
+            const [l, p, r] = c.parts;
+            ctx.fillStyle = v('--text');
+            ctx.textAlign = 'right';
+            ctx.fillText(l, x, H / 2);
+            ctx.textAlign = 'left';
+            ctx.font = `700 ${size}px ${font}`;
+            ctx.fillStyle = v('--focus-letter');
+            ctx.fillText(p, x, H / 2);
+            const pw = ctx.measureText(p).width;
+            ctx.font = `500 ${size}px ${font}`;
+            ctx.fillStyle = v('--text');
+            ctx.fillText(r, x + pw, H / 2);
+            ctx.fillStyle = v('--focus-letter');
+            ctx.fillRect(x + pw / 2 - 2, 24, 4, 26);
+            ctx.fillRect(x + pw / 2 - 2, H - 50, 4, 26);
+        } else {
+            const tmp = document.createElement('div');
+            tmp.innerHTML = c.html;
+            ctx.font = `500 48px ${font}`;
+            ctx.fillStyle = v('--text');
+            ctx.textAlign = 'center';
+            ctx.fillText(tmp.textContent, W / 2, H / 2, W - 60);
+        }
+        ctx.fillStyle = v('--surface-2');
+        ctx.fillRect(0, H - 8, W, 8);
+        ctx.fillStyle = v('--accent');
+        ctx.fillRect(0, H - 8, W * frac, 8);
+    }
+
+    function bindMini() {
+        $('#mini-play').addEventListener('click', toggle);
+        $('#mini-prev').addEventListener('click', () => stepSentence(-1));
+        $('#mini-next').addEventListener('click', () => stepSentence(1));
+        $('#mini-slower').addEventListener('click', () => changeWpm(-25));
+        $('#mini-faster').addEventListener('click', () => changeWpm(25));
+        $('#mini-expand').addEventListener('click', () => closeMini());
+        $('#btn-pip').addEventListener('click', openMini);
+        $('#pip-return').addEventListener('click', () => closeMini());
     }
 
     function bindControls() {
@@ -1217,6 +1568,11 @@
         $('#btn-fullscreen').addEventListener('click', toggleFullscreen);
         $('#theme-cycle').addEventListener('click', cycleTheme);
         $('#go-home').addEventListener('click', showHome);
+        $('#reader-back').addEventListener('click', showHome);
+        el.voiceBtn.addEventListener('click', toggleVoice);
+
+        // Los controles aparecen al mover el ratón o tocar la pantalla
+        ['pointermove', 'pointerdown', 'wheel'].forEach((ev) => el.reader.addEventListener(ev, () => hud.poke(), { passive: true }));
 
         // Clic en el escenario
         el.rsvp.addEventListener('click', toggle);
@@ -1291,7 +1647,21 @@
     }
 
     function changeWpm(delta) {
+        if (voiceActive()) {
+            setSetting('voiceRate', clamp(Math.round((Number(settings.voiceRate) + Math.sign(delta) * 0.1) * 10) / 10, 0.5, 3));
+            return;
+        }
         setSetting('wpm', clamp(Math.round((settings.wpm + delta) / 5) * 5, 60, 1500));
+    }
+
+    function toggleVoice() {
+        if (!LV.speech || LV.speech.supported === false) {
+            toast('Este navegador no tiene síntesis de voz.', { error: true });
+            return;
+        }
+        if (mode().voice) { setMode('focus'); return; }
+        setSetting('voice', !settings.voice);
+        toast(settings.voice ? 'Lectura en voz alta activada' : 'Lectura en voz alta desactivada', { duration: 1500 });
     }
 
     function toggleFullscreen() {
@@ -1306,34 +1676,47 @@
         toast('Tema: ' + THEMES.find((t) => t.id === next).name, { duration: 1400 });
     }
 
+    function handleKey(e) {
+        const t = e.target || {};
+        const tag = (t.tagName || '').toLowerCase();
+        if (tag === 'input' || tag === 'textarea' || tag === 'select' || t.isContentEditable) return;
+        if (e.metaKey || e.ctrlKey || e.altKey) return;
+        if (document.querySelector('dialog[open]')) return; // el diálogo gestiona sus teclas (Esc lo cierra)
+        const inReader = !el.reader.hidden && state.tok;
+        const k = e.key;
+        if (inReader) hud.poke();
+        if (k === 'Escape') {
+            if (!el.modeMenu.hidden) toggleModeMenu(false);
+            else if (!el.scrim.hidden) closePanels();
+            else if (state.mini) closeMini();
+            else if (inReader && !document.fullscreenElement) showHome();
+            return;
+        }
+        if (k === '?') { openPanel('shortcuts'); return; }
+        if (k === 't' || k === 'T') { cycleTheme(); return; }
+        if (k === 's' || k === 'S') { openPanel('settings'); return; }
+        if (k === 'b' || k === 'B') { openPanel('library'); return; }
+        if (!inReader) return;
+        if (k === ' ' || k === 'k') { e.preventDefault(); toggle(); }
+        else if (k === 'ArrowRight') { e.preventDefault(); e.shiftKey ? stepSentence(1) : step(1); }
+        else if (k === 'ArrowLeft') { e.preventDefault(); e.shiftKey ? stepSentence(-1) : step(-1); }
+        else if (k === 'ArrowUp') { e.preventDefault(); changeWpm(25); }
+        else if (k === 'ArrowDown') { e.preventDefault(); changeWpm(-25); }
+        else if (k === '[') setSetting('chunkSize', clamp(settings.chunkSize - 1, 1, 8));
+        else if (k === ']') setSetting('chunkSize', clamp(settings.chunkSize + 1, 1, 8));
+        else if (k === 'f' || k === 'F') toggleFullscreen();
+        else if (k === 'm' || k === 'M') toggleModeMenu();
+        else if (k === 'v' || k === 'V') toggleVoice();
+        else if (k === 'p' || k === 'P') openMini();
+        else if (k === 'Home') { e.preventDefault(); seek(0); }
+        else if (k === 'End') { e.preventDefault(); seek(n() - 1); }
+        else if (k === '+' || k === '=') setSetting(mode().kind === 'rsvp' ? 'rsvpSize' : 'pageSize', mode().kind === 'rsvp' ? clamp(settings.rsvpSize + 4, 28, 120) : clamp(settings.pageSize + 1, 14, 32));
+        else if (k === '-') setSetting(mode().kind === 'rsvp' ? 'rsvpSize' : 'pageSize', mode().kind === 'rsvp' ? clamp(settings.rsvpSize - 4, 28, 120) : clamp(settings.pageSize - 1, 14, 32));
+        else if (MODE_KEYS.includes(k) && MODES[MODE_KEYS.indexOf(k)]) setMode(MODES[MODE_KEYS.indexOf(k)].id);
+    }
+
     function bindKeyboard() {
-        document.addEventListener('keydown', (e) => {
-            const tag = (e.target.tagName || '').toLowerCase();
-            if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable) return;
-            if (e.metaKey || e.ctrlKey || e.altKey) return;
-            if (document.querySelector('dialog[open]') && e.key !== 'Escape') return;
-            const inReader = !el.reader.hidden && state.tok;
-            const k = e.key;
-            if (k === 'Escape') { closePanels(); return; }
-            if (k === '?') { openPanel('shortcuts'); return; }
-            if (k === 't' || k === 'T') { cycleTheme(); return; }
-            if (k === 's' || k === 'S') { openPanel('settings'); return; }
-            if (k === 'b' || k === 'B') { openPanel('library'); return; }
-            if (!inReader) return;
-            if (k === ' ' || k === 'k') { e.preventDefault(); toggle(); }
-            else if (k === 'ArrowRight') { e.preventDefault(); e.shiftKey ? stepSentence(1) : step(1); }
-            else if (k === 'ArrowLeft') { e.preventDefault(); e.shiftKey ? stepSentence(-1) : step(-1); }
-            else if (k === 'ArrowUp') { e.preventDefault(); changeWpm(25); }
-            else if (k === 'ArrowDown') { e.preventDefault(); changeWpm(-25); }
-            else if (k === '[') setSetting('chunkSize', clamp(settings.chunkSize - 1, 1, 8));
-            else if (k === ']') setSetting('chunkSize', clamp(settings.chunkSize + 1, 1, 8));
-            else if (k === 'f' || k === 'F') toggleFullscreen();
-            else if (k === 'Home') { e.preventDefault(); seek(0); }
-            else if (k === 'End') { e.preventDefault(); seek(n() - 1); }
-            else if (k === '+' || k === '=') setSetting(mode().kind === 'rsvp' ? 'rsvpSize' : 'pageSize', mode().kind === 'rsvp' ? clamp(settings.rsvpSize + 4, 28, 120) : clamp(settings.pageSize + 1, 14, 32));
-            else if (k === '-') setSetting(mode().kind === 'rsvp' ? 'rsvpSize' : 'pageSize', mode().kind === 'rsvp' ? clamp(settings.rsvpSize - 4, 28, 120) : clamp(settings.pageSize - 1, 14, 32));
-            else if (/^[1-9]$/.test(k) && MODES[Number(k) - 1]) setMode(MODES[Number(k) - 1].id);
-        });
+        document.addEventListener('keydown', handleKey);
     }
 
     /* =====================================================
@@ -1504,7 +1887,10 @@
         el.home.hidden = true;
         el.reader.hidden = false;
         el.title.textContent = state.book ? state.book.title : '';
-        $$('.mode-pill').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.mode === settings.mode)));
+        el.readerTitle.textContent = state.book ? state.book.title : '';
+        document.body.classList.add('in-reader');
+        syncModeUI();
+        hud.show();
         updateSessionClock();
     }
 
@@ -1512,8 +1898,11 @@
         if (state.playing) pause(false);
         flushSession();
         saveProgress(true);
+        if (state.mini) closeMini();
+        toggleModeMenu(false);
         el.reader.hidden = true;
         el.home.hidden = false;
+        document.body.classList.remove('in-reader');
         el.title.textContent = '';
         renderRecent();
         renderHomeStats();
@@ -1778,6 +2167,10 @@
         bindImport();
         bindNative();
         bindTraining();
+        bindMini();
+        configureSpeech();
+        populateVoices();
+        if (window.speechSynthesis && speechSynthesis.addEventListener) speechSynthesis.addEventListener('voiceschanged', () => populateVoices());
         $('.eyebrow').lastChild.textContent = ` ${MODES.length} modos de lectura`;
 
         try {

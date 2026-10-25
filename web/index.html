@@ -49,6 +49,9 @@
             <symbol id="i-flame" viewBox="0 0 24 24"><path d="M12 3c1 3.5 5 5.5 5 10a5 5 0 0 1-10 0c0-2 1-3.5 2-4.5.3 1.6 1.2 2.5 2 2.5-1-3 0-6 1-8z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></symbol>
             <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.9"/><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="1.9"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/></symbol>
             <symbol id="i-clip" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" fill="none" stroke="currentColor" stroke-width="1.9"/><rect x="9" y="3" width="6" height="4" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M12 11v6M9.5 14.5L12 17l2.5-2.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+            <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+            <symbol id="i-headphones" viewBox="0 0 24 24"><path d="M4 15v-3a8 8 0 0 1 16 0v3" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><rect x="3.5" y="14" width="4.5" height="6.5" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.9"/><rect x="16" y="14" width="4.5" height="6.5" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.9"/></symbol>
+            <symbol id="i-pip" viewBox="0 0 24 24"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.9"/><rect x="11.5" y="11.5" width="7.5" height="5.5" rx="1.2" fill="currentColor"/></symbol>
             <symbol id="i-timer" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M12 9v4l2.5 2.5M9.5 2.5h5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
         </defs>
     </svg>
@@ -76,15 +79,15 @@
         <!-- ===== Vista de inicio ===== -->
         <main class="view view-home" id="view-home">
             <section class="hero">
-                <p class="eyebrow"><svg><use href="#i-spark"/></svg> 9 modos de lectura</p>
+                <p class="eyebrow"><svg><use href="#i-spark"/></svg> 10 modos de lectura</p>
                 <h1>Lee más rápido.<br><span class="grad">Sin perder el hilo.</span></h1>
                 <p class="hero-sub">Carga un libro o pega cualquier texto y elige cómo quieres leerlo: una palabra a la vez, en bloques, con guía de resaltado, lectura biónica y más.</p>
 
                 <label class="dropzone" id="dropzone">
-                    <input type="file" id="file-input" accept=".txt,.md,.markdown,.html,.htm,.epub,.pdf,.png,.jpg,.jpeg,.webp,text/plain,image/*" multiple hidden>
+                    <input type="file" id="file-input" accept=".txt,.md,.markdown,.html,.htm,.epub,.pdf,.docx,.png,.jpg,.jpeg,.webp,text/plain,image/*" multiple hidden>
                     <span class="dropzone-icon"><svg><use href="#i-upload"/></svg></span>
                     <span class="dropzone-title">Arrastra un archivo o <u>haz clic para elegir</u></span>
-                    <span class="dropzone-hint">TXT · MD · HTML · EPUB · PDF · Imágenes (OCR)</span>
+                    <span class="dropzone-hint">PDF · EPUB · Word · TXT · MD · HTML · Imágenes (OCR)</span>
                 </label>
 
                 <div class="hero-actions">
@@ -112,7 +115,27 @@
 
         <!-- ===== Vista del lector ===== -->
         <main class="view view-reader" id="view-reader" hidden>
-            <div class="mode-bar" role="tablist" aria-label="Modo de lectura" id="mode-bar"></div>
+            <!-- Barra superior flotante -->
+            <header class="hud hud-top">
+                <button class="hud-btn" id="reader-back" title="Volver al inicio (Esc)"><svg><use href="#i-prev"/></svg></button>
+                <div class="hud-title">
+                    <strong id="reader-title"></strong>
+                    <span id="meta-words"></span>
+                </div>
+                <div class="hud-actions">
+                    <button class="hud-chip" id="mode-btn" aria-haspopup="menu" aria-expanded="false" title="Modo de lectura (M)">
+                        <span class="mode-dot"></span><span id="mode-name">Enfoque</span><svg class="chev"><use href="#i-chevron"/></svg>
+                    </button>
+                    <button class="hud-btn" id="btn-voice" title="Leer en voz alta (V)"><svg><use href="#i-headphones"/></svg></button>
+                    <button class="hud-btn" id="btn-pip" title="Ventana flotante (P)"><svg><use href="#i-pip"/></svg></button>
+                    <button class="hud-btn" data-open="settings" title="Ajustes (S)"><svg><use href="#i-settings"/></svg></button>
+                    <button class="hud-btn" id="btn-fullscreen" title="Pantalla completa (F)"><svg><use href="#i-expand"/></svg></button>
+                </div>
+            </header>
+
+            <div class="mode-menu" id="mode-menu" hidden>
+                <div class="mode-grid" id="mode-bar" role="menu" aria-label="Modo de lectura"></div>
+            </div>
 
             <section class="stage" id="stage" aria-live="off">
                 <!-- RSVP / bloques -->
@@ -126,7 +149,7 @@
                     <div class="rsvp-context rsvp-context-next" id="rsvp-next"></div>
                 </div>
 
-                <!-- Modos de página (resaltado, línea, biónica, degradado) -->
+                <!-- Modos de página (resaltado, línea, biónica, degradado, escuchar) -->
                 <div class="page-wrap" id="page-wrap" hidden>
                     <article class="page" id="page"></article>
                 </div>
@@ -146,51 +169,65 @@
 
                 <div class="countdown" id="countdown" hidden></div>
                 <div class="finish-card" id="finish-card" hidden></div>
+                <div class="pip-note" id="pip-note" hidden>
+                    <svg><use href="#i-pip"/></svg>
+                    <p>Leyendo en la ventana flotante</p>
+                    <button class="btn btn-sm btn-ghost" id="pip-return">Volver aquí</button>
+                </div>
             </section>
 
-            <!-- Dock de controles -->
-            <footer class="dock">
-                <div class="scrubber" id="scrubber">
-                    <div class="scrubber-track"><div class="scrubber-fill" id="scrubber-fill"></div><div class="scrubber-thumb" id="scrubber-thumb"></div></div>
-                    <div class="scrubber-tip" id="scrubber-tip" hidden></div>
-                </div>
-                <div class="dock-meta">
-                    <span id="meta-progress">0%</span>
-                    <span id="meta-words">0 / 0 palabras</span>
-                    <span id="meta-left">—</span>
-                </div>
-                <div class="dock-row">
-                    <div class="dock-group dock-left">
-                        <div class="stepper" title="Palabras por minuto (↑/↓)">
-                            <button class="step-btn" id="wpm-down" aria-label="Menos velocidad">−</button>
-                            <div class="stepper-value"><strong id="wpm-value">300</strong><small>ppm</small></div>
-                            <button class="step-btn" id="wpm-up" aria-label="Más velocidad">+</button>
-                        </div>
-                        <div class="stepper" id="chunk-stepper" title="Palabras por bloque ([ / ])">
-                            <button class="step-btn" id="chunk-down" aria-label="Menos palabras">−</button>
-                            <div class="stepper-value"><strong id="chunk-value">3</strong><small>pal.</small></div>
-                            <button class="step-btn" id="chunk-up" aria-label="Más palabras">+</button>
-                        </div>
+            <!-- Controles flotantes -->
+            <div class="hud hud-bottom">
+                <div class="pill">
+                    <div class="pill-group" title="Velocidad (↑/↓)">
+                        <button class="pill-step" id="wpm-down" aria-label="Menos velocidad">−</button>
+                        <div class="pill-value"><strong id="wpm-value">300</strong><small id="wpm-unit">ppm</small></div>
+                        <button class="pill-step" id="wpm-up" aria-label="Más velocidad">+</button>
                     </div>
+                    <span class="pill-sep"></span>
+                    <button class="pill-btn hide-sm" id="btn-back-sentence" title="Frase anterior (Shift+←)"><svg><use href="#i-back-sentence"/></svg></button>
+                    <button class="pill-btn" id="btn-prev" title="Retroceder (←)"><svg><use href="#i-prev"/></svg></button>
+                    <button class="play-btn" id="btn-play" title="Reproducir / pausar (Espacio)"><svg><use href="#i-play"/></svg></button>
+                    <button class="pill-btn" id="btn-next" title="Avanzar (→)"><svg><use href="#i-next"/></svg></button>
+                    <button class="pill-btn hide-sm" id="btn-fwd-sentence" title="Frase siguiente (Shift+→)"><svg><use href="#i-fwd-sentence"/></svg></button>
+                    <span class="pill-sep" id="chunk-sep"></span>
+                    <div class="pill-group" id="chunk-stepper" title="Palabras por bloque ([ / ])">
+                        <button class="pill-step" id="chunk-down" aria-label="Menos palabras">−</button>
+                        <div class="pill-value"><strong id="chunk-value">3</strong><small>pal.</small></div>
+                        <button class="pill-step" id="chunk-up" aria-label="Más palabras">+</button>
+                    </div>
+                    <div class="pill-meta hide-sm"><strong id="meta-progress">0%</strong><span id="meta-left">—</span></div>
+                </div>
+            </div>
 
-                    <div class="dock-group dock-center">
-                        <button class="icon-btn" id="btn-back-sentence" title="Frase anterior (Shift+←)"><svg><use href="#i-back-sentence"/></svg></button>
-                        <button class="icon-btn" id="btn-prev" title="Retroceder (←)"><svg><use href="#i-prev"/></svg></button>
-                        <button class="play-btn" id="btn-play" title="Reproducir / pausar (Espacio)"><svg><use href="#i-play"/></svg></button>
-                        <button class="icon-btn" id="btn-next" title="Avanzar (→)"><svg><use href="#i-next"/></svg></button>
-                        <button class="icon-btn" id="btn-fwd-sentence" title="Frase siguiente (Shift+→)"><svg><use href="#i-fwd-sentence"/></svg></button>
-                    </div>
-
-                    <div class="dock-group dock-right">
-                        <span class="session-chip" id="session-chip" title="Tiempo de sesión"><svg><use href="#i-timer"/></svg><span id="session-time">0:00</span></span>
-                        <button class="icon-btn" id="btn-fullscreen" title="Pantalla completa (F)"><svg><use href="#i-expand"/></svg></button>
-                    </div>
-                </div>
-            </footer>
+            <!-- Progreso en el borde inferior -->
+            <div class="edge-progress" id="scrubber">
+                <div class="scrubber-track"><div class="scrubber-fill" id="scrubber-fill"></div><div class="scrubber-thumb" id="scrubber-thumb"></div></div>
+                <div class="scrubber-tip" id="scrubber-tip" hidden></div>
+            </div>
         </main>
 
         <!-- ===== Entrenamiento ===== -->
         <main class="view view-training" id="view-training" hidden></main>
+    </div>
+
+    <!-- ===== Mini reproductor flotante ===== -->
+    <div class="mini" id="mini-player" hidden>
+        <div class="mini-stage" data-tauri-drag-region>
+            <div class="mini-word" id="mini-word" data-tauri-drag-region></div>
+        </div>
+        <div class="mini-bar"><i id="mini-fill"></i></div>
+        <div class="mini-controls">
+            <button class="mini-btn" id="mini-prev" title="Frase anterior"><svg viewBox="0 0 24 24"><path d="M11 6l-6 6 6 6M19 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button class="mini-btn mini-play" id="mini-play" title="Reproducir / pausar"><svg viewBox="0 0 24 24"><path class="ico-play" d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" fill="currentColor"/><g class="ico-pause"><rect x="6" y="5" width="4" height="14" rx="1.2" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1.2" fill="currentColor"/></g></svg></button>
+            <button class="mini-btn" id="mini-next" title="Frase siguiente"><svg viewBox="0 0 24 24"><path d="M5 6l6 6-6 6M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <div class="mini-speed">
+                <button class="mini-btn" id="mini-slower" title="Más lento">−</button>
+                <span id="mini-wpm">300</span>
+                <button class="mini-btn" id="mini-faster" title="Más rápido">+</button>
+            </div>
+            <button class="mini-btn" id="mini-expand" title="Volver a la ventana completa"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        </div>
     </div>
 
     <!-- ===== Paneles laterales ===== -->
@@ -247,10 +284,6 @@
                     <input type="checkbox" class="switch" data-setting="countdown">
                 </label>
                 <label class="switch-field">
-                    <span><strong>Leer en voz alta</strong><small>Voz sincronizada con el texto (usa las voces del sistema).</small></span>
-                    <input type="checkbox" class="switch" data-setting="voice">
-                </label>
-                <label class="switch-field">
                     <span><strong>Modo inmersivo</strong><small>Oculta los controles mientras lees.</small></span>
                     <input type="checkbox" class="switch" data-setting="immersive">
                 </label>
@@ -258,6 +291,40 @@
                     <span class="field-label">Límite de sesión <output data-for="sessionLimit"></output></span>
                     <input type="range" min="0" max="60" step="1" data-setting="sessionLimit">
                 </label>
+            </fieldset>
+
+            <fieldset>
+                <legend>Voz</legend>
+                <label class="switch-field">
+                    <span><strong>Leer en voz alta</strong><small>La voz lee mientras el texto avanza sincronizado, en cualquier modo.</small></span>
+                    <input type="checkbox" class="switch" data-setting="voice">
+                </label>
+                <label class="field">
+                    <span class="field-label">Motor de voz</span>
+                    <select class="input" data-setting="voiceProvider">
+                        <option value="system">Voces del sistema (Microsoft en Windows y Edge)</option>
+                        <option value="azure">Microsoft Azure · voces neuronales</option>
+                    </select>
+                </label>
+                <label class="field">
+                    <span class="field-label">Voz</span>
+                    <select class="input" id="voice-select"></select>
+                </label>
+                <label class="field">
+                    <span class="field-label">Velocidad de la voz <output data-for="voiceRate"></output></span>
+                    <input type="range" min="0.5" max="3" step="0.1" data-setting="voiceRate">
+                </label>
+                <div class="field" data-show-if="voiceProvider=azure">
+                    <span class="field-label">Clave de Azure Speech</span>
+                    <input type="password" class="input" data-setting="azureKey" placeholder="Pega tu clave (se guarda solo en este dispositivo)" autocomplete="off">
+                    <span class="field-label">Región</span>
+                    <input type="text" class="input" data-setting="azureRegion" placeholder="p. ej. westeurope, eastus">
+                    <p class="fine">Crea un recurso gratuito «Speech» en el portal de Azure (nivel F0) y copia la clave y la región.</p>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-sm" id="voice-test">Probar voz</button>
+                </div>
+                <p class="fine" id="voice-hint">Consejo: en Microsoft Edge aparecen las voces «Online (Natural)» de Microsoft, las más realistas.</p>
             </fieldset>
 
             <fieldset>
@@ -369,14 +436,17 @@
                 <dt><kbd>Shift</kbd>+<kbd>←</kbd> <kbd>→</kbd></dt><dd>Frase anterior o siguiente</dd>
                 <dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Subir / bajar velocidad (±25 ppm)</dd>
                 <dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Menos / más palabras por bloque</dd>
-                <dt><kbd>1</kbd>–<kbd>9</kbd></dt><dd>Cambiar de modo de lectura</dd>
+                <dt><kbd>1</kbd>–<kbd>9</kbd> · <kbd>0</kbd></dt><dd>Cambiar de modo (0 = Escuchar)</dd>
+                <dt><kbd>M</kbd></dt><dd>Menú de modos</dd>
+                <dt><kbd>V</kbd></dt><dd>Leer en voz alta</dd>
+                <dt><kbd>P</kbd></dt><dd>Ventana flotante</dd>
                 <dt><kbd>+</kbd> <kbd>−</kbd></dt><dd>Tamaño del texto</dd>
                 <dt><kbd>Ctrl</kbd>+<kbd>V</kbd></dt><dd>Pegar texto o captura (OCR) para leerla</dd>
                 <dt><kbd>F</kbd></dt><dd>Pantalla completa</dd>
                 <dt><kbd>T</kbd></dt><dd>Cambiar tema</dd>
                 <dt><kbd>S</kbd> · <kbd>B</kbd></dt><dd>Ajustes · Biblioteca</dd>
                 <dt><kbd>Inicio</kbd></dt><dd>Volver al principio</dd>
-                <dt><kbd>Esc</kbd></dt><dd>Cerrar paneles</dd>
+                <dt><kbd>Esc</kbd></dt><dd>Cerrar paneles · salir del lector</dd>
             </dl>
         </form>
     </dialog>
@@ -387,6 +457,7 @@
     <script src="js/text.js"></script>
     <script src="js/importers.js"></script>
     <script src="js/training.js"></script>
+    <script src="js/speech.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-/* importers.js — convierte archivos (txt, md, html, epub, pdf, imágenes) en texto plano.
+/* importers.js — convierte archivos (txt, md, html, epub, docx, pdf, imágenes) en texto plano.
  * Script clásico (no módulo). Expone window.LV.importers.
  *
  * Salida: { title, text } donde text son párrafos separados por "\n\n".
@@ -13,7 +13,8 @@
     jszip: 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
     pdfjs: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
     pdfWorker: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
-    tesseract: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js'
+    tesseract: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js',
+    mammoth: 'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js'
   };
 
   var EXT = {
@@ -21,6 +22,7 @@
     md: 'md', markdown: 'md', mdown: 'md', mkd: 'md',
     html: 'html', htm: 'html', xhtml: 'html',
     epub: 'epub',
+    docx: 'docx',
     pdf: 'pdf',
     png: 'image', jpg: 'image', jpeg: 'image', webp: 'image', bmp: 'image', gif: 'image'
   };
@@ -30,13 +32,16 @@
     'text/markdown': 'md', 'text/x-markdown': 'md',
     'text/html': 'html', 'application/xhtml+xml': 'html',
     'application/epub+zip': 'epub',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
     'application/pdf': 'pdf',
     'image/png': 'image', 'image/jpeg': 'image', 'image/webp': 'image',
     'image/bmp': 'image', 'image/gif': 'image'
   };
 
-  var ACCEPT = '.txt,.md,.markdown,.html,.htm,.xhtml,.epub,.pdf,.png,.jpg,.jpeg,.webp,' +
-    'text/plain,text/markdown,text/html,application/epub+zip,application/pdf,image/png,image/jpeg,image/webp';
+  var ACCEPT = '.txt,.md,.markdown,.html,.htm,.xhtml,.epub,.docx,.pdf,.png,.jpg,.jpeg,.webp,' +
+    'text/plain,text/markdown,text/html,application/epub+zip,' +
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document,' +
+    'application/pdf,image/png,image/jpeg,image/webp';
 
   // ---------------------------------------------------------------- utilidades
 
@@ -430,6 +435,65 @@
       });
   }
 
+  // ---------------------------------------------------------------- DOCX (Word)
+
+  // Título desde docProps/core.xml (<dc:title>). Opcional: si falla, devuelve ''.
+  function docxTitle(buf) {
+    return loadScript(CDN.jszip, 'JSZip', 'No se pudo cargar JSZip.')
+      .then(function (JSZip) { return JSZip.loadAsync(buf); })
+      .then(function (zip) {
+        var core = zipFile(zip, 'docProps/core.xml');
+        return core ? core.async('string') : '';
+      })
+      .then(function (xml) {
+        if (!xml) return '';
+        var d = new DOMParser().parseFromString(xml, 'application/xml');
+        var t = textOf(firstByLocalName(d, 'title'));
+        if (/^(untitled|sin título|documento\d*|document\d*|título|title)$/i.test(t)) t = '';
+        return t;
+      })
+      .catch(function () { return ''; });
+  }
+
+  function importDocx(file) {
+    return readAsArrayBuffer(file).then(function (buf) {
+      var titleP = docxTitle(buf);
+      var textP = loadScript(CDN.mammoth, 'mammoth', 'No se pudo cargar el lector de Word (DOCX). Revisa tu conexión.')
+        .then(function (mammoth) {
+          return Promise.resolve(mammoth.convertToHtml({ arrayBuffer: buf }, {
+            // Las imágenes no se usan: evitar convertirlas a base64.
+            convertImage: mammoth.images.imgElement(function () { return Promise.resolve({ src: '' }); })
+          })).catch(function () {
+            throw new Error('El archivo DOCX está dañado o no es válido.');
+          });
+        })
+        .then(function (res) {
+          var doc = parseMarkup('<!DOCTYPE html><html><body>' + ((res && res.value) || '') + '</body></html>', false);
+          // Quitar llamadas a notas ("[1]") y enlaces de vuelta ("↑"); las notas quedan al final.
+          Array.prototype.forEach.call(
+            doc.querySelectorAll('a[href^="#footnote-"], a[href^="#endnote-"], a[href^="#comment-"]'),
+            function (a) {
+              var sup = a.parentNode && a.parentNode.nodeName === 'SUP' && a.parentNode.childNodes.length === 1 ? a.parentNode : a;
+              if (sup.parentNode) sup.parentNode.removeChild(sup);
+            });
+          // Mammoth envuelve cada celda en <p>: aplanarlas para que cada fila sea un párrafo.
+          Array.prototype.forEach.call(doc.querySelectorAll('td p, th p'), function (pEl) {
+            var span = doc.createElement('span');
+            while (pEl.firstChild) span.appendChild(pEl.firstChild);
+            span.appendChild(doc.createTextNode(' '));
+            pEl.parentNode.replaceChild(span, pEl);
+          });
+          return joinParagraphs(domToParagraphs(doc.body));
+        });
+      return Promise.all([textP, titleP]).then(function (r) {
+        return {
+          title: r[1] || baseName(file.name),
+          text: ensureText(r[0], 'El documento de Word no contiene texto legible.')
+        };
+      });
+    });
+  }
+
   // ---------------------------------------------------------------- PDF
 
   function loadPdfJs() {
@@ -648,8 +712,11 @@
       var kind = kindOf(file);
       if (!kind) {
         var ext = extOf(file.name);
+        if (ext === 'doc') {
+          throw new Error('Los documentos .doc antiguos no son compatibles. Guárdalo como .docx o PDF desde Word.');
+        }
         throw new Error('Formato no compatible' + (ext ? ' (.' + ext + ')' : '') +
-          '. Usa TXT, Markdown, HTML, EPUB, PDF o una imagen (PNG, JPG, WEBP).');
+          '. Usa TXT, Markdown, HTML, EPUB, Word (DOCX), PDF o una imagen (PNG, JPG, WEBP).');
       }
       if (file.size === 0) throw new Error('El archivo está vacío.');
       switch (kind) {
@@ -657,6 +724,7 @@
         case 'md': return importMd(file);
         case 'html': return importHtml(file);
         case 'epub': return importEpub(file);
+        case 'docx': return importDocx(file);
         case 'pdf': return importPdf(file);
         case 'image': return importImage(file, onProgress);
       }

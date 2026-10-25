@@ -1,12 +1,31 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "desktop",
-  "description": "Permisos solo de escritorio (atajos globales)",
-  "platforms": ["linux", "macOS", "windows"],
-  "windows": ["main"],
+  "description": "Permisos solo de escritorio (atajos globales y mini lector flotante)",
+  "platforms": [
+    "linux",
+    "macOS",
+    "windows"
+  ],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "global-shortcut:allow-is-registered",
     "global-shortcut:allow-register",
-    "global-shortcut:allow-unregister"
+    "global-shortcut:allow-unregister",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-always-on-top",
+    "core:window:allow-set-size",
+    "core:window:allow-set-position",
+    "core:window:allow-set-decorations",
+    "core:window:allow-set-min-size",
+    "core:window:allow-inner-size",
+    "core:window:allow-outer-position",
+    "core:window:allow-minimize",
+    "core:window:allow-close",
+    "core:window:allow-is-maximized",
+    "core:window:allow-unmaximize",
+    "core:window:allow-maximize"
   ]
 }

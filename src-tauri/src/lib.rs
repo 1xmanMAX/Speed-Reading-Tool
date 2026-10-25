@@ -34,7 +34,9 @@ const POLL_STEPS: u32 = 12; // 12 * 250 ms = 3 s
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 enum QuickRead {
-    Text { text: String },
+    Text {
+        text: String,
+    },
     #[allow(dead_code)] // only constructed on desktop
     Image {
         #[serde(rename = "dataUrl")]
@@ -236,6 +238,144 @@ fn quick_read_ready(state: tauri::State<'_, QuickState>) -> Option<QuickRead> {
     state.pending.lock().unwrap().take()
 }
 
+/// Window geometry saved before entering mini mode, restored on exit.
+#[cfg(desktop)]
+#[derive(Clone, Copy)]
+struct SavedWindow {
+    position: tauri::PhysicalPosition<i32>,
+    size: tauri::PhysicalSize<u32>,
+    maximized: bool,
+    fullscreen: bool,
+    decorated: bool,
+}
+
+/// Saved geometry per window label (desktop only; empty on mobile).
+#[derive(Default)]
+struct MiniState {
+    #[cfg(desktop)]
+    saved: Mutex<std::collections::HashMap<String, SavedWindow>>,
+}
+
+#[cfg(desktop)]
+const MINI_SIZE: (f64, f64) = (460.0, 170.0);
+#[cfg(desktop)]
+const MINI_MIN_SIZE: (f64, f64) = (300.0, 120.0);
+/// Must match `minWidth`/`minHeight` in tauri.conf.json.
+#[cfg(desktop)]
+const NORMAL_MIN_SIZE: (f64, f64) = (380.0, 560.0);
+#[cfg(desktop)]
+const MINI_MARGIN: f64 = 24.0;
+
+/// Floating mini-reader: `enabled = true` turns the window into a small,
+/// frameless, always-on-top player at the bottom-right of the current
+/// monitor's work area; `false` restores the previous geometry.
+/// Returns whether mini mode is now active (always `false` on mobile).
+#[tauri::command]
+fn set_mini_mode(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, MiniState>,
+    enabled: bool,
+) -> Result<bool, String> {
+    #[cfg(desktop)]
+    {
+        use tauri::{LogicalSize, PhysicalPosition, PhysicalSize};
+        let e = |err: tauri::Error| err.to_string();
+        let label = window.label().to_string();
+
+        if enabled {
+            {
+                let mut saved = state.saved.lock().unwrap();
+                // Already mini: keep the original geometry, just re-place.
+                if !saved.contains_key(&label) {
+                    saved.insert(
+                        label.clone(),
+                        SavedWindow {
+                            position: window.outer_position().map_err(e)?,
+                            size: window.inner_size().map_err(e)?,
+                            maximized: window.is_maximized().unwrap_or(false),
+                            fullscreen: window.is_fullscreen().unwrap_or(false),
+                            decorated: window.is_decorated().unwrap_or(true),
+                        },
+                    );
+                }
+            }
+
+            if window.is_fullscreen().unwrap_or(false) {
+                window.set_fullscreen(false).map_err(e)?;
+            }
+            if window.is_maximized().unwrap_or(false) {
+                window.unmaximize().map_err(e)?;
+            }
+            window.set_decorations(false).map_err(e)?;
+            window.set_always_on_top(true).map_err(e)?;
+            window.set_resizable(true).map_err(e)?;
+            window
+                .set_min_size(Some(LogicalSize::new(MINI_MIN_SIZE.0, MINI_MIN_SIZE.1)))
+                .map_err(e)?;
+            window
+                .set_size(LogicalSize::new(MINI_SIZE.0, MINI_SIZE.1))
+                .map_err(e)?;
+            let _ = window.set_skip_taskbar(false);
+
+            // Bottom-right of the work area (excludes taskbar/dock/menu bar).
+            if let Ok(Some(monitor)) = window
+                .current_monitor()
+                .or_else(|_| window.primary_monitor())
+            {
+                let sf = monitor.scale_factor();
+                let area = monitor.work_area();
+                let w = (MINI_SIZE.0 * sf).round() as i32;
+                let h = (MINI_SIZE.1 * sf).round() as i32;
+                let m = (MINI_MARGIN * sf).round() as i32;
+                let x = area.position.x + area.size.width as i32 - w - m;
+                let y = area.position.y + area.size.height as i32 - h - m;
+                window
+                    .set_position(PhysicalPosition::new(
+                        x.max(area.position.x),
+                        y.max(area.position.y),
+                    ))
+                    .map_err(e)?;
+            }
+            let _ = window.set_focus();
+            Ok(true)
+        } else {
+            let saved = state.saved.lock().unwrap().remove(&label);
+            window.set_always_on_top(false).map_err(e)?;
+            window
+                .set_min_size(Some(LogicalSize::new(NORMAL_MIN_SIZE.0, NORMAL_MIN_SIZE.1)))
+                .map_err(e)?;
+            match saved {
+                Some(s) => {
+                    window.set_decorations(s.decorated).map_err(e)?;
+                    window
+                        .set_size(PhysicalSize::new(s.size.width, s.size.height))
+                        .map_err(e)?;
+                    window.set_position(s.position).map_err(e)?;
+                    if s.maximized {
+                        window.maximize().map_err(e)?;
+                    }
+                    if s.fullscreen {
+                        window.set_fullscreen(true).map_err(e)?;
+                    }
+                }
+                None => {
+                    // Nothing saved (e.g. called twice): fall back to defaults.
+                    window.set_decorations(true).map_err(e)?;
+                }
+            }
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+            Ok(false)
+        }
+    }
+    #[cfg(mobile)]
+    {
+        let _ = (window, state, enabled);
+        Ok(false)
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
@@ -252,6 +392,7 @@ pub fn run() {
 
     builder = builder
         .manage(QuickState::default())
+        .manage(MiniState::default())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init());
@@ -270,7 +411,8 @@ pub fn run() {
             }
 
             let h = handle.clone();
-            app.deep_link().on_open_url(move |event| handle_urls(&h, event.urls()));
+            app.deep_link()
+                .on_open_url(move |event| handle_urls(&h, event.urls()));
             if let Ok(Some(urls)) = app.deep_link().get_current() {
                 handle_urls(&handle, urls);
             }
@@ -305,7 +447,11 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![read_clipboard, quick_read_ready])
+        .invoke_handler(tauri::generate_handler![
+            read_clipboard,
+            quick_read_ready,
+            set_mini_mode
+        ])
         .run(tauri::generate_context!())
         .expect("error al iniciar Lectura Veloz");
 }
