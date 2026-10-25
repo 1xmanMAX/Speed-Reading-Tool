@@ -76,7 +76,7 @@
         flashTimer: 0,
         stepStart: 0,
         stepDur: 0,
-        stepsSinceResume: 0,
+        wordsSinceResume: 0,
         playStartedAt: 0,
         pausedByUser: false,
         // ventana de página renderizada
@@ -392,8 +392,11 @@
     function unitDuration(start, end) {
         const base = 60000 / effectiveWpm();
         const factor = state.prefix[end] - state.prefix[start];
-        const warm = [1.5, 1.25, 1.1][state.stepsSinceResume] || 1;
-        let d = base * factor * warm;
+        // Arranque suave: solo las 3 primeras palabras tras reanudar van más lentas
+        const WARM = [0.5, 0.25, 0.1];
+        let extra = 0;
+        for (let k = state.wordsSinceResume; k < WARM.length && k - state.wordsSinceResume < end - start; k++) extra += WARM[k];
+        let d = base * (factor + extra);
         if (mode().chunk) {
             // Los bloques se leen algo más rápido que palabra a palabra
             d *= 0.92;
@@ -415,7 +418,7 @@
         const start = () => {
             state.playing = true;
             state.playStartedAt = performance.now();
-            state.stepsSinceResume = 0;
+            state.wordsSinceResume = 0;
             beginSession();
             updatePlayButton();
             render();
@@ -455,7 +458,7 @@
         clearTimeout(state.timer);
         clearTimeout(state.flashTimer);
         stopSpeech();
-        state.stepsSinceResume = 0;
+        state.wordsSinceResume = 0;
         if (settings.voice && 'speechSynthesis' in window) speakFrom(state.pos);
         else scheduleNext();
     }
@@ -470,7 +473,7 @@
         state.timer = setTimeout(() => {
             if (!state.playing) return;
             countRead(end - start);
-            state.stepsSinceResume++;
+            state.wordsSinceResume += end - start;
             if (end >= n()) {
                 finish();
                 return;

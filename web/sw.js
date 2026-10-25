@@ -4,7 +4,7 @@
  * - Other same-origin GET: network-first, falling back to cache.
  * Bump CACHE_VERSION whenever shell files change.
  */
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const SHELL_CACHE = `lv-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `lv-runtime-${CACHE_VERSION}`;
 const FONT_CACHE = `lv-fonts-${CACHE_VERSION}`;

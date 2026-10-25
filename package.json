@@ -14,7 +14,8 @@
     "ios:init": "tauri ios init",
     "ios:dev": "tauri ios dev",
     "ios:build": "tauri ios build",
-    "serve": "npx --yes http-server web -p 8080 -c-1"
+    "serve": "npx --yes http-server web -p 8080 -c-1",
+    "test": "node tests/e2e.js"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"
