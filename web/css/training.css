@@ -148,7 +148,7 @@
     user-select: none;
     -webkit-tap-highlight-color: transparent;
 }
-.tr-cell.has-dot { place-items: end center; padding-bottom: 10%; }
+.tr-cell.has-dot { place-items: end center; padding-bottom: 3%; }
 .tr-cell:hover:not(:disabled) { background: var(--border); }
 .tr-cell:active:not(:disabled) { transform: scale(.95); }
 .tr-cell:disabled { cursor: default; color: var(--text-muted); }
