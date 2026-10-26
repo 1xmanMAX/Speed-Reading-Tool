@@ -23,8 +23,10 @@ window.LV = window.LV || {};
     const F_PARAGRAPH = 4;  // fin de párrafo
     const F_NUMBER = 8;
 
+    const IMG = '\uFFFC'; // marca de imagen insertada por los importadores
+
     function countWords(text) {
-        const m = text.match(/\S+/g);
+        const m = String(text).replace(/\uFFFC/g, ' ').match(/\S+/g);
         return m ? m.length : 0;
     }
 
@@ -33,6 +35,7 @@ window.LV = window.LV || {};
      *  words: string[]           palabras tal cual aparecen
      *  flags: Uint8Array         marcas de puntuación / párrafo
      *  paraStarts: number[]      índice de la primera palabra de cada párrafo
+     *  images: {at, k}[]          imagen k se muestra justo antes de la palabra `at`
      */
     function tokenize(text) {
         const normalized = String(text || '')
@@ -42,8 +45,23 @@ window.LV = window.LV || {};
         const paragraphs = normalized.split(/\n\s*\n+|\n(?=\s*[—–-]\s)/);
         const words = [];
         const paraStarts = [];
+        const images = [];
+        let imgCount = 0;
 
         for (const para of paragraphs) {
+            // Párrafos que contienen marcas de imagen: registrar cada una en su posición
+            if (para.indexOf(IMG) !== -1) {
+                const pieces = para.split(IMG);
+                for (let j = 0; j < pieces.length; j++) {
+                    if (j > 0) images.push({ at: words.length, k: imgCount++ });
+                    const ws = pieces[j].trim().split(/\s+/).filter(Boolean);
+                    if (ws.length) {
+                        paraStarts.push(words.length);
+                        for (const w of ws) words.push(w);
+                    }
+                }
+                continue;
+            }
             const parts = para.trim().split(/\s+/).filter(Boolean);
             if (parts.length === 0) continue;
             paraStarts.push(words.length);
@@ -74,7 +92,7 @@ window.LV = window.LV || {};
             flags[i] = f;
         }
 
-        return { words, flags, paraStarts };
+        return { words, flags, paraStarts, images };
     }
 
     /** Parte "limpia" de una palabra (sin puntuación de apertura/cierre) y sus desplazamientos */
@@ -216,7 +234,7 @@ window.LV = window.LV || {};
 
     LV.text = {
         F_COMMA, F_SENTENCE, F_PARAGRAPH, F_NUMBER,
-        countWords, tokenize, orpIndex, delayFactor, chunkEnd, buildChunks,
+        IMG, countWords, tokenize, orpIndex, delayFactor, chunkEnd, buildChunks,
         sentenceStart, nextSentence, bionicCount, bionicHtml, escapeHtml, estimateMs,
         isFunctionWord, hasLetters, SAMPLE,
     };

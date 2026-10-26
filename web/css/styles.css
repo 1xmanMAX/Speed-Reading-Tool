@@ -1662,3 +1662,78 @@ body.mini-mode .mini { position: fixed; inset: 0; border-radius: 0; }
     -webkit-mask-image: linear-gradient(transparent 0, #000 40px, #000 calc(100% - 40px), transparent);
     mask-image: linear-gradient(transparent 0, #000 40px, #000 calc(100% - 40px), transparent);
 }
+
+/* =========================================================
+   Imágenes en la lectura
+   ========================================================= */
+.page .fig {
+    margin: 0 0 calc(var(--page-size) * var(--line-height) * .9);
+    text-align: center;
+    cursor: zoom-in;
+}
+
+.page .fig img {
+    max-width: 100%;
+    max-height: 60vh;
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    background: #fff;
+}
+
+.page .fig figcaption {
+    margin-top: 8px;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.img-flash {
+    position: absolute;
+    inset: 70px 20px 110px;
+    display: grid;
+    place-items: center;
+    z-index: 4;
+    background: var(--bg);
+    cursor: zoom-in;
+}
+
+.img-flash img { max-width: min(100%, 900px); max-height: 100%; border-radius: 14px; box-shadow: var(--shadow); background: #fff; animation: pop-in .3s var(--ease) both; }
+.img-flash span { position: absolute; bottom: 12px; right: 16px; font-size: 13px; color: var(--text-muted); }
+
+.lightbox {
+    border: 0;
+    padding: 0;
+    background: transparent;
+    max-width: 96vw;
+    max-height: 96vh;
+    margin: auto;
+    color: #fff;
+    text-align: center;
+}
+
+.lightbox::backdrop { background: rgba(0, 0, 0, .85); backdrop-filter: blur(4px); }
+.lightbox img { max-width: 94vw; max-height: 86vh; border-radius: 10px; background: #fff; display: block; margin: 0 auto; }
+.lightbox p { margin-top: 10px; font-size: 14px; opacity: .8; }
+.lightbox form { position: fixed; top: 14px; right: 14px; }
+.lightbox-close { color: #fff; background: rgba(255, 255, 255, .12); border-radius: 50%; }
+
+/* Portadas en la biblioteca */
+.book-cover.has-img { background-size: cover; background-position: center; color: transparent; }
+
+/* =========================================================
+   Vista original (PDF)
+   ========================================================= */
+#btn-original { display: none; }
+.view-reader.has-original #btn-original { display: inline-grid; }
+
+.original-view { position: absolute; inset: 0; z-index: 7; background: var(--surface-2); }
+.original-host { position: absolute; inset: 0; }
+.original-read {
+    position: absolute;
+    left: 50%;
+    bottom: 26px;
+    transform: translateX(-50%);
+    z-index: 10;
+    border-radius: 999px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .25);
+}

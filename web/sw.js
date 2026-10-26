@@ -4,7 +4,7 @@
  * - Other same-origin GET: network-first, falling back to cache.
  * Bump CACHE_VERSION whenever shell files change.
  */
-const CACHE_VERSION = 'v4';
+const CACHE_VERSION = 'v5';
 const SHELL_CACHE = `lv-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `lv-runtime-${CACHE_VERSION}`;
 const FONT_CACHE = `lv-fonts-${CACHE_VERSION}`;
@@ -18,6 +18,8 @@ const SHELL = [
   './js/importers.js',
   './js/training.js',
   './js/speech.js',
+  './js/pdfview.js',
+  './css/pdfview.css',
   './css/training.css',
   './js/app.js',
   './manifest.webmanifest',

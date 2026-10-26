@@ -7,14 +7,16 @@ window.LV = window.LV || {};
     'use strict';
 
     const DB_NAME = 'lectura-veloz';
-    const DB_VERSION = 1;
+    const DB_VERSION = 2;
     const STORE = 'books';
+    const ASSETS = 'assets'; // imágenes y archivo original, separados para que la biblioteca cargue rápido
     const SETTINGS_KEY = 'lv.settings';
     const STATS_KEY = 'lv.stats';
     const LEGACY_KEY = 'fastReadingLibrary';
 
     let dbPromise = null;
     const memory = new Map(); // respaldo si IndexedDB no está disponible
+    const memoryAssets = new Map();
 
     function openDb() {
         if (dbPromise) return dbPromise;
@@ -32,6 +34,7 @@ window.LV = window.LV || {};
                     const store = db.createObjectStore(STORE, { keyPath: 'id' });
                     store.createIndex('lastOpened', 'lastOpened');
                 }
+                if (!db.objectStoreNames.contains(ASSETS)) db.createObjectStore(ASSETS, { keyPath: 'bookId' });
             };
             req.onsuccess = () => resolve(req.result);
             req.onerror = () => resolve(null);
@@ -40,10 +43,10 @@ window.LV = window.LV || {};
         return dbPromise;
     }
 
-    function tx(db, mode, fn) {
+    function tx(db, mode, fn, storeName = STORE) {
         return new Promise((resolve, reject) => {
-            const t = db.transaction(STORE, mode);
-            const store = t.objectStore(STORE);
+            const t = db.transaction(storeName, mode);
+            const store = t.objectStore(storeName);
             let result;
             const req = fn(store);
             if (req) req.onsuccess = () => { result = req.result; };
@@ -75,8 +78,24 @@ window.LV = window.LV || {};
         },
         async remove(id) {
             const db = await openDb();
-            if (db) await tx(db, 'readwrite', (s) => s.delete(id));
-            else memory.delete(id);
+            if (db) {
+                await tx(db, 'readwrite', (s) => s.delete(id));
+                await tx(db, 'readwrite', (s) => s.delete(id), ASSETS).catch(() => {});
+            } else {
+                memory.delete(id);
+                memoryAssets.delete(id);
+            }
+        },
+        /** { images: [{blob, alt}], original: {blob, type} } */
+        async getAssets(id) {
+            const db = await openDb();
+            return (db ? await tx(db, 'readonly', (s) => s.get(id), ASSETS) : memoryAssets.get(id)) || null;
+        },
+        async putAssets(id, assets) {
+            const rec = Object.assign({ bookId: id }, assets);
+            const db = await openDb();
+            if (db) await tx(db, 'readwrite', (s) => s.put(rec), ASSETS);
+            else memoryAssets.set(id, rec);
         },
         /** Actualiza solo la posición sin reescribir el libro completo en memoria del llamador */
         async patch(id, fields) {
@@ -85,18 +104,28 @@ window.LV = window.LV || {};
             Object.assign(book, fields);
             return books.put(book);
         },
-        async create({ title, text, source }) {
+        async create({ title, text, source, images, original, pageOffsets, cover }) {
             const now = Date.now();
             const existing = (await books.all()).find((b) => b.title === title && b.text.length === text.length);
             if (existing) {
                 existing.lastOpened = now;
                 return books.put(existing);
             }
+            const id = uid();
+            const hasImages = Array.isArray(images) && images.length > 0;
+            if (hasImages || original) {
+                await books.putAssets(id, { images: hasImages ? images : [], original: original || null });
+            }
             return books.put({
-                id: uid(),
+                id,
                 title,
                 text,
                 source: source || 'archivo',
+                imageCount: hasImages ? images.length : 0,
+                hasOriginal: !!original,
+                originalType: original ? original.type : null,
+                pageOffsets: pageOffsets || null,
+                cover: cover || null,
                 wordCount: LV.text ? LV.text.countWords(text) : text.split(/\s+/).length,
                 index: 0,
                 createdAt: now,

@@ -52,7 +52,22 @@ Lectura Veloz es una aplicación de lectura rápida, moderna, gratuita y sin con
 
 ## Funciones
 
-- **Importación**: PDF, EPUB, **Word (.docx)**, TXT (UTF-8 y Windows-1252), Markdown, HTML e **imágenes con OCR** (Tesseract, en español e inglés). También puedes pegar texto o capturas con Ctrl+V desde cualquier pantalla.
+- **Importación de casi cualquier formato:** el texto se extrae solo al subir el archivo.
+
+  | Tipo | Formatos |
+  |------|----------|
+  | Libros | PDF, EPUB, Kindle sin DRM (MOBI, AZW3, AZW, PRC), FB2 |
+  | Documentos | Word (DOCX), OpenDocument (ODT, ODS, ODP), RTF, Markdown, HTML, TXT (UTF-8 y Windows-1252) |
+  | Presentaciones y datos | PowerPoint (PPTX), Excel (XLSX), CSV, TSV, JSON |
+  | Subtítulos | SRT, VTT |
+  | Imágenes y capturas | OCR en español e inglés |
+
+  - **PDF escaneados:** las páginas sin texto se pasan por **OCR** automáticamente.
+  - **Imágenes del documento:** se conservan las de EPUB, Word, ODT, FB2, Kindle, PowerPoint, HTML, Markdown y PDF.
+    - En los modos de página aparecen dentro del texto; al hacer clic se abren a tamaño completo.
+    - En los modos de una palabra se muestran unos segundos al llegar a ellas. La pausa se ajusta en *Ajustes → Imágenes*.
+  - **Vista original del PDF** (botón 📄 o tecla `O`): muestra las páginas reales con su diseño, zoom y modo nocturno. *Leer desde esta página* continúa la lectura rápida desde ahí.
+  - También puedes pegar texto o capturas con Ctrl+V desde cualquier pantalla.
 - **Integración con PixPin**:
   - El atajo global **Ctrl+Alt+R** lee lo que tengas en el portapapeles.
   - El enlace **`lecturaveloz://clipboard`** permite lanzar la lectura desde un script de PixPin.

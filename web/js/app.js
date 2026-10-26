@@ -56,6 +56,8 @@
         azureKey: '',
         azureRegion: '',
         immersive: true,
+        showImages: true,
+        imagePause: 2,
         miniView: 'auto',
         miniScale: 1,
     };
@@ -95,6 +97,10 @@
         saveTimer: 0,
         rafId: 0,
         speaking: false,
+        images: [],          // [{url, alt}] imágenes del libro
+        imgAt: new Map(),    // índice de palabra → [k] imágenes antes de esa palabra
+        original: null,      // { blob, type } archivo original (PDF)
+        pdfView: null,
     };
 
     const el = {
@@ -235,6 +241,7 @@
         columnWidth: (v) => `${v} car.`,
         bionicRatio: (v) => `${Math.round(v * 100)}%`,
         voiceRate: (v) => `${Number(v).toFixed(1)}×`,
+        imagePause: (v) => `${Number(v).toFixed(1)} s`,
     };
 
     const voiceActive = () => !!(mode().voice || settings.voice) && !!LV.speech && LV.speech.supported !== false;
@@ -313,6 +320,10 @@
                 break;
             case 'dimInactive':
                 render();
+                break;
+            case 'showImages':
+                invalidateWindow();
+                render({ jump: true });
                 break;
             case 'voice':
                 restartIfPlaying();
@@ -494,6 +505,7 @@
         stopSpeech();
         stopScrollLoop();
         freezePacer();
+        hideImageFlash();
         updatePlayButton();
         tickSession();
         saveProgress(true);
@@ -532,8 +544,57 @@
             }
             setPos(end);
             if (checkSessionLimit()) return;
+            // En los modos de una palabra/bloque, las imágenes se muestran un momento al llegar a ellas
+            const imgs = imagesBetween(start, end);
+            if (imgs.length && (mode().kind === 'rsvp' || mode().kind === 'peri')) {
+                showImageFlash(imgs);
+                state.timer = setTimeout(() => {
+                    hideImageFlash();
+                    if (state.playing) scheduleNext();
+                }, settings.imagePause * 1000 * imgs.length);
+                return;
+            }
             scheduleNext();
         }, dur);
+    }
+
+    function imagesBetween(start, end) {
+        if (!settings.showImages || !state.imgAt.size || !state.images.length) return [];
+        const out = [];
+        for (let i = start + 1; i <= end; i++) if (state.imgAt.has(i)) out.push(...state.imgAt.get(i));
+        return out.filter((k) => state.images[k]);
+    }
+
+    function showImageFlash(ks) {
+        let box = $('#img-flash');
+        if (!box) {
+            box = document.createElement('div');
+            box.id = 'img-flash';
+            box.className = 'img-flash';
+            box.addEventListener('click', () => openLightbox(Number(box.dataset.k)));
+            el.stage.appendChild(box);
+        }
+        const k = ks[0];
+        const img = state.images[k];
+        box.dataset.k = k;
+        box.innerHTML = `<img src="${img.url}" alt="${esc(img.alt)}">${ks.length > 1 ? `<span>+${ks.length - 1}</span>` : ''}`;
+        box.hidden = false;
+    }
+
+    function hideImageFlash() {
+        const box = $('#img-flash');
+        if (box) box.hidden = true;
+    }
+
+    function openLightbox(k) {
+        const img = state.images[k];
+        if (!img) return;
+        const d = $('#modal-image');
+        $('#lightbox-img').src = img.url;
+        $('#lightbox-img').alt = img.alt || '';
+        $('#lightbox-cap').textContent = img.alt || '';
+        if (state.playing) pause();
+        if (!d.open) d.showModal();
     }
 
     function onStepStart(dur) {
@@ -559,6 +620,7 @@
     function seek(i) {
         if (!state.tok) return;
         hideFinish();
+        hideImageFlash();
         state.pos = unitStart(clamp(i, 0, n() - 1));
         state.pausedByUser = false;
         render({ jump: true });
@@ -885,7 +947,12 @@
         let html = '';
         let p = pIdx;
         let open = false;
+        const imgAt = settings.showImages ? state.imgAt : null;
         for (let i = start; i < end; i++) {
+            if (imgAt && imgAt.has(i)) {
+                if (open) { html += '</p>'; open = false; }
+                html += imgAt.get(i).map(figureHtml).join('');
+            }
             if (p < paraStarts.length && paraStarts[p] === i) {
                 if (open) html += '</p>';
                 html += '<p>';
@@ -900,6 +967,7 @@
             html += `<span class="w" data-i="${i}">${bionic ? T.bionicHtml(words[i], ratio) : esc(words[i])}</span>`;
         }
         if (open) html += '</p>';
+        if (imgAt && end === total && imgAt.has(total)) html += imgAt.get(total).map(figureHtml).join('');
         if (start > 0) html = '<p class="fine">…</p>' + html;
         if (end < total) html += '<p class="fine">…</p>';
 
@@ -913,6 +981,13 @@
         w.lines = null;
         state.curRange = [0, 0];
         return true;
+    }
+
+    function figureHtml(k) {
+        const img = state.images[k];
+        if (!img) return '';
+        const alt = esc(img.alt || '');
+        return `<figure class="fig" data-img="${k}"><img src="${img.url}" alt="${alt}" loading="lazy" decoding="async">${img.alt && !/^(Página \d+|image|imagen)$/i.test(img.alt) ? `<figcaption>${alt}</figcaption>` : ''}</figure>`;
     }
 
     function spanAt(i) {
@@ -1347,6 +1422,70 @@
     }
 
     /* =====================================================
+       Vista original del documento (PDF con su diseño e imágenes)
+       ===================================================== */
+    /** Índice de la primera palabra de cada página (a partir de los desplazamientos de caracteres) */
+    function pageWordStarts() {
+        const b = state.book;
+        if (!b || !Array.isArray(b.pageOffsets)) return null;
+        if (state.pageWords && state.pageWords.id === b.id) return state.pageWords.list;
+        const list = [];
+        let prev = 0;
+        let acc = 0;
+        for (const off of b.pageOffsets) {
+            acc += T.countWords(b.text.slice(prev, off));
+            list.push(Math.min(acc, Math.max(0, n() - 1)));
+            prev = off;
+        }
+        state.pageWords = { id: b.id, list };
+        return list;
+    }
+
+    function pageOfPos(pos) {
+        const starts = pageWordStarts();
+        return starts && starts.length ? lowerBound(starts, pos) + 1 : 1;
+    }
+
+    async function openOriginal() {
+        if (state.pdfView) return closeOriginal();
+        if (!state.original || !LV.pdfview) {
+            toast(state.book && state.book.hasOriginal ? 'Cargando el documento…' : 'Este documento no tiene vista original.', { duration: 1800 });
+            return;
+        }
+        if (state.playing) pause();
+        const view = $('#original-view');
+        view.hidden = false;
+        $('#btn-original').classList.add('is-on');
+        try {
+            state.pdfView = await LV.pdfview.open($('#original-host'), state.original.blob, {
+                page: pageOfPos(state.pos),
+                onClose: closeOriginal,
+            });
+        } catch (err) {
+            closeOriginal();
+            toast((err && err.message) || 'No se pudo abrir el documento original.', { error: true });
+        }
+    }
+
+    function closeOriginal() {
+        const v = state.pdfView;
+        state.pdfView = null;
+        if (v && v.destroy) { try { v.destroy(); } catch (e) { /* ya cerrado */ } }
+        $('#original-host').innerHTML = '';
+        $('#original-view').hidden = true;
+        $('#btn-original').classList.remove('is-on');
+    }
+
+    function readFromOriginalPage() {
+        const v = state.pdfView;
+        const starts = pageWordStarts();
+        const page = v ? v.page : 1;
+        closeOriginal();
+        if (starts && starts[page - 1] !== undefined) seek(starts[page - 1]);
+        play();
+    }
+
+    /* =====================================================
        HUD: controles flotantes que se ocultan al leer
        ===================================================== */
     const hud = (() => {
@@ -1685,6 +1824,8 @@
         $('#theme-cycle').addEventListener('click', cycleTheme);
         $('#go-home').addEventListener('click', showHome);
         $('#reader-back').addEventListener('click', showHome);
+        $('#btn-original').addEventListener('click', openOriginal);
+        $('#original-read').addEventListener('click', readFromOriginalPage);
         el.voiceBtn.addEventListener('click', toggleVoice);
 
         // Los controles aparecen al mover el ratón o tocar la pantalla
@@ -1694,6 +1835,8 @@
         el.rsvp.addEventListener('click', toggle);
         el.peri.addEventListener('click', toggle);
         [el.page, el.scrollPage].forEach((p) => p.addEventListener('click', (e) => {
+            const fig = e.target.closest('.fig');
+            if (fig) { openLightbox(Number(fig.dataset.img)); return; }
             const w = e.target.closest('.w');
             if (w) seek(Number(w.dataset.i));
         }));
@@ -1804,6 +1947,7 @@
         if (inReader) hud.poke();
         if (k === 'Escape') {
             if (!el.modeMenu.hidden) toggleModeMenu(false);
+            else if (state.pdfView) closeOriginal();
             else if (!el.scrim.hidden) closePanels();
             else if (state.mini) closeMini();
             else if (inReader && !document.fullscreenElement) showHome();
@@ -1825,6 +1969,7 @@
         else if (k === 'm' || k === 'M') toggleModeMenu();
         else if (k === 'v' || k === 'V') toggleVoice();
         else if (k === 'p' || k === 'P') openMini();
+        else if ((k === 'o' || k === 'O') && state.book && state.book.hasOriginal) openOriginal();
         else if (k === 'Home') { e.preventDefault(); seek(0); }
         else if (k === 'End') { e.preventDefault(); seek(n() - 1); }
         else if (k === '+' || k === '=') setSetting(mode().kind === 'rsvp' ? 'rsvpSize' : 'pageSize', mode().kind === 'rsvp' ? clamp(settings.rsvpSize + 4, 28, 120) : clamp(settings.pageSize + 1, 14, 32));
@@ -1903,7 +2048,9 @@
         return `
             <div class="book-card${active}" data-book="${b.id}" role="button" tabindex="0">
                 <div class="book-row">
-                    <span class="book-cover" style="background:hsl(${hue} 50% 42%)">${initial}</span>
+                    ${b.cover
+                        ? `<span class="book-cover has-img" style="background-image:url('${b.cover}')">${initial}</span>`
+                        : `<span class="book-cover" style="background:hsl(${hue} 50% 42%)">${initial}</span>`}
                     <div class="book-text">
                         <div class="book-title" title="${esc(b.title)}">${esc(b.title)}</div>
                         <div class="book-meta">${fmtNum(b.wordCount)} palabras · ${b.finished && pct >= 99 ? 'Terminado' : 'quedan ' + fmtDuration(left)}</div>
@@ -1988,12 +2135,58 @@
         if (autoplay) setTimeout(play, 250);
     }
 
+    /** Miniatura pequeña (data URL) para la portada en la biblioteca */
+    async function makeThumb(blob) {
+        try {
+            const bmp = await createImageBitmap(blob);
+            const w = 96;
+            const h = Math.round(w * Math.min(1.6, bmp.height / bmp.width));
+            const c = document.createElement('canvas');
+            c.width = w;
+            c.height = h;
+            const sc = Math.max(w / bmp.width, h / bmp.height);
+            c.getContext('2d').drawImage(bmp, (w - bmp.width * sc) / 2, (h - bmp.height * sc) / 2, bmp.width * sc, bmp.height * sc);
+            bmp.close && bmp.close();
+            return c.toDataURL('image/jpeg', 0.7);
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function releaseAssets() {
+        (state.images || []).forEach((x) => x.url && URL.revokeObjectURL(x.url));
+        state.images = [];
+        state.imgAt = new Map();
+        state.original = null;
+    }
+
+    /** Carga imágenes y archivo original del libro (en segundo plano) */
+    async function loadAssets(book) {
+        releaseAssets();
+        state.imgAt = new Map();
+        for (const im of state.tok.images) {
+            if (!state.imgAt.has(im.at)) state.imgAt.set(im.at, []);
+            state.imgAt.get(im.at).push(im.k);
+        }
+        el.reader.classList.toggle('has-original', !!book.hasOriginal);
+        if (!book.imageCount && !book.hasOriginal) return;
+        let assets = null;
+        try { assets = await S.books.getAssets(book.id); } catch (e) { assets = null; }
+        if (!assets || state.book !== book) return;
+        state.images = (assets.images || []).map((x) => ({ url: URL.createObjectURL(x.blob), alt: x.alt || '' }));
+        state.original = assets.original || null;
+        invalidateWindow();
+        if (!el.reader.hidden) render({ jump: true });
+    }
+
     function openBook(book) {
         if (state.playing) pause(false);
+        if (state.original && state.pdfView) closeOriginal();
         flushSession();
         hideFinish();
         state.book = book;
         state.tok = T.tokenize(book.text);
+        loadAssets(book);
         state.chunkCache.clear();
         buildPrefix();
         state.pos = clamp(book.index || 0, 0, Math.max(0, n() - 1));
@@ -2029,6 +2222,7 @@
         flushSession();
         saveProgress(true);
         if (state.mini) closeMini();
+        if (state.pdfView) closeOriginal();
         toggleModeMenu(false);
         el.reader.hidden = true;
         el.home.hidden = false;
@@ -2050,10 +2244,19 @@
             try {
                 const res = isImg
                     ? await imp.importImage(file, (pct, msg) => t.update(pct, msg))
-                    : await imp.importFile(file);
+                    : await imp.importFile(file, (pct, msg) => t.update(pct, msg));
                 t.close();
-                if (!res.text || !res.text.trim()) throw new Error('No se encontró texto en el archivo.');
-                opened = await S.books.create({ title: res.title || file.name, text: res.text, source: isImg ? 'OCR' : (file.name.split('.').pop() || '').toUpperCase() });
+                if (!res.text || !res.text.replace(/\uFFFC/g, '').trim()) throw new Error('No se encontró texto en el archivo.');
+                const images = Array.isArray(res.images) ? res.images.filter((x) => x && x.blob) : [];
+                opened = await S.books.create({
+                    title: res.title || file.name,
+                    text: res.text,
+                    source: isImg ? 'OCR' : (file.name.split('.').pop() || '').toUpperCase(),
+                    images: images.map((x) => ({ blob: x.blob, alt: x.alt || '' })),
+                    original: res.original || null,
+                    pageOffsets: res.pageOffsets || null,
+                    cover: images.length ? await makeThumb(images[0].blob) : null,
+                });
             } catch (err) {
                 t.close();
                 toast(err && err.message ? err.message : 'No se pudo importar el archivo.', { error: true, duration: 5000 });

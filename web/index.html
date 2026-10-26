@@ -11,6 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;500;700&family=Inter:wght@400;500;600;700&family=Lexend:wght@300;400;500&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,500;0,7..72,600;1,7..72,400&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="css/training.css">
+    <link rel="stylesheet" href="css/pdfview.css">
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -52,6 +53,7 @@
             <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
             <symbol id="i-headphones" viewBox="0 0 24 24"><path d="M4 15v-3a8 8 0 0 1 16 0v3" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><rect x="3.5" y="14" width="4.5" height="6.5" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.9"/><rect x="16" y="14" width="4.5" height="6.5" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.9"/></symbol>
             <symbol id="i-pip" viewBox="0 0 24 24"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.9"/><rect x="11.5" y="11.5" width="7.5" height="5.5" rx="1.2" fill="currentColor"/></symbol>
+            <symbol id="i-doc" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M14 3v4h4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><rect x="8.5" y="11" width="7" height="5" rx="1" fill="currentColor"/></symbol>
             <symbol id="i-timer" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M12 9v4l2.5 2.5M9.5 2.5h5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
         </defs>
     </svg>
@@ -84,10 +86,10 @@
                 <p class="hero-sub">Carga un libro o pega cualquier texto y elige cómo quieres leerlo: una palabra a la vez, en bloques, con guía de resaltado, lectura biónica y más.</p>
 
                 <label class="dropzone" id="dropzone">
-                    <input type="file" id="file-input" accept=".txt,.md,.markdown,.html,.htm,.epub,.pdf,.docx,.png,.jpg,.jpeg,.webp,text/plain,image/*" multiple hidden>
+                    <input type="file" id="file-input" accept=".txt,.md,.markdown,.html,.htm,.epub,.pdf,.docx,.odt,.ods,.odp,.rtf,.fb2,.mobi,.azw,.azw3,.prc,.pptx,.xlsx,.csv,.tsv,.srt,.vtt,.json,.png,.jpg,.jpeg,.webp,text/plain,image/*" multiple hidden>
                     <span class="dropzone-icon"><svg><use href="#i-upload"/></svg></span>
                     <span class="dropzone-title">Arrastra un archivo o <u>haz clic para elegir</u></span>
-                    <span class="dropzone-hint">PDF · EPUB · Word · TXT · MD · HTML · Imágenes (OCR)</span>
+                    <span class="dropzone-hint">PDF · EPUB · Word · Kindle · ODT · RTF · PowerPoint · Excel · TXT · MD · HTML · Imágenes (OCR)</span>
                 </label>
 
                 <div class="hero-actions">
@@ -126,6 +128,7 @@
                     <button class="hud-chip" id="mode-btn" aria-haspopup="menu" aria-expanded="false" title="Modo de lectura (M)">
                         <span class="mode-dot"></span><span id="mode-name">Enfoque</span><svg class="chev"><use href="#i-chevron"/></svg>
                     </button>
+                    <button class="hud-btn" id="btn-original" title="Vista original del documento (O)"><svg><use href="#i-doc"/></svg></button>
                     <button class="hud-btn" id="btn-voice" title="Leer en voz alta (V)"><svg><use href="#i-headphones"/></svg></button>
                     <button class="hud-btn" id="btn-pip" title="Ventana flotante (P)"><svg><use href="#i-pip"/></svg></button>
                     <button class="hud-btn" data-open="settings" title="Ajustes (S)"><svg><use href="#i-settings"/></svg></button>
@@ -165,6 +168,11 @@
                 <!-- Visión periférica -->
                 <div class="peri" id="peri" hidden>
                     <div class="peri-col" id="peri-col"></div>
+                </div>
+
+                <div class="original-view" id="original-view" hidden>
+                    <div class="original-host" id="original-host"></div>
+                    <button class="btn original-read" id="original-read"><svg><use href="#i-play"/></svg> Leer desde esta página</button>
                 </div>
 
                 <div class="countdown" id="countdown" hidden></div>
@@ -376,6 +384,18 @@
             </fieldset>
 
             <fieldset>
+                <legend>Imágenes</legend>
+                <label class="switch-field">
+                    <span><strong>Mostrar imágenes</strong><small>Ilustraciones, fotos y gráficos del documento dentro de la lectura.</small></span>
+                    <input type="checkbox" class="switch" data-setting="showImages">
+                </label>
+                <label class="field" data-depends="showImages">
+                    <span class="field-label">Pausa en cada imagen (modos palabra) <output data-for="imagePause"></output></span>
+                    <input type="range" min="0.5" max="6" step="0.5" data-setting="imagePause">
+                </label>
+            </fieldset>
+
+            <fieldset>
                 <legend>Modos de página</legend>
                 <label class="switch-field">
                     <span><strong>Atenuar texto no activo</strong><small>Ayuda a mantener la vista en la guía.</small></span>
@@ -450,6 +470,14 @@
         </form>
     </dialog>
 
+    <dialog class="lightbox" id="modal-image">
+        <form method="dialog">
+            <button class="icon-btn lightbox-close" value="close" title="Cerrar (Esc)"><svg><use href="#i-close"/></svg></button>
+        </form>
+        <img id="lightbox-img" alt="">
+        <p id="lightbox-cap"></p>
+    </dialog>
+
     <div class="toast-host" id="toasts" aria-live="polite"></div>
 
     <script src="js/storage.js"></script>
@@ -457,6 +485,7 @@
     <script src="js/importers.js"></script>
     <script src="js/training.js"></script>
     <script src="js/speech.js"></script>
+    <script src="js/pdfview.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>
