@@ -264,7 +264,8 @@ async function openSample(page) {
 
     // Importación de archivos
     await goHome(page);
-    const files = ['latin1.txt', 'doc.md', 'page.html', 'book.epub', 'doc.pdf', 'documento.docx'];
+    const files = ['latin1.txt', 'doc.md', 'page.html', 'book.epub', 'doc.pdf', 'documento.docx',
+        'documento.odt', 'texto.rtf', 'libro.fb2', 'libro.mobi', 'libro-palmdoc.mobi', 'presentacion.pptx', 'tabla.xlsx', 'subtitulos.srt'];
     for (const f of files) {
         await goHome(page);
         await page.setInputFiles('#file-input', path.join(FIX, f));
@@ -273,6 +274,36 @@ async function openSample(page) {
         check(`Importa ${f}`, t.n > 3, t);
         if (f === 'latin1.txt') check('Texto Windows-1252 decodificado (ñ y acentos)', /[ñóáé]/.test(t.first + (await page.evaluate(() => LV.app.state.book.text))), t.first);
     }
+    // Documentos con imágenes: se conservan y se muestran en la lectura
+    for (const f of ['con-imagen.epub', 'con-imagen.docx', 'documento.odt', 'libro.fb2', 'libro.mobi', 'presentacion.pptx', 'con-imagen.pdf']) {
+        await goHome(page);
+        await page.setInputFiles('#file-input', path.join(FIX, f));
+        await page.waitForFunction(() => !document.querySelector('#view-reader').hidden && LV.app.state.tok, null, { timeout: 60000 });
+        await page.evaluate(() => LV.app.setMode('guided'));
+        await page.waitForFunction(() => document.querySelector('#page .fig img'), null, { timeout: 10000 }).catch(() => {});
+        const r = await page.evaluate(() => ({ marks: LV.app.state.tok.images.length, loaded: LV.app.state.images.length, figs: document.querySelectorAll('#page .fig img').length }));
+        check(`${f}: imágenes conservadas y visibles`, r.marks > 0 && r.loaded === r.marks && r.figs > 0, r);
+        if (f === 'con-imagen.epub') await shot(page, '19a-epub-con-imagenes');
+    }
+
+    // PDF: vista original con las páginas reales
+    check('PDF: vista original disponible', await page.isVisible('#btn-original'));
+    await page.click('#btn-original');
+    await page.waitForSelector('#original-host canvas', { timeout: 30000 });
+    await page.waitForTimeout(800);
+    await shot(page, '19b-pdf-vista-original');
+    await page.click('#original-read');
+    await page.waitForTimeout(500);
+    check('«Leer desde esta página» vuelve a la lectura', (await state(page)).playing && !(await page.isVisible('#original-view')));
+    await page.evaluate(() => LV.app.pause());
+
+    // PDF escaneado: OCR automático
+    await goHome(page);
+    await page.setInputFiles('#file-input', path.join(FIX, 'escaneado.pdf'));
+    await page.waitForFunction(() => !document.querySelector('#view-reader').hidden && LV.app.state.book && /PDF/i.test(LV.app.state.book.source), null, { timeout: 120000 });
+    const scanned = await page.evaluate(() => LV.app.state.book.text.slice(0, 80));
+    check('PDF escaneado: texto reconocido por OCR', /murci|veloz|saxof/i.test(scanned), scanned);
+
     await goHome(page);
     await page.setInputFiles('#file-input', path.join(FIX, 'shot.png'));
     await page.waitForTimeout(400);
@@ -298,7 +329,7 @@ async function openSample(page) {
     await page.waitForTimeout(400);
     const books = (await page.$$('#library-list .book-card')).length;
     await shot(page, '22-biblioteca');
-    check('La biblioteca guarda todos los textos', books >= 8, books);
+    check('La biblioteca guarda todos los textos', books >= 20, books);
     await page.keyboard.press('Escape');
 
     // Persistencia de la posición tras recargar

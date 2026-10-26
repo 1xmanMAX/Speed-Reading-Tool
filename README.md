@@ -107,7 +107,7 @@ Lectura Veloz es una aplicación de lectura rápida, moderna, gratuita y sin con
 ## Pruebas
 
 ```bash
-npm test             # 51 comprobaciones en Chromium y capturas en tests/screenshots/
+npm test             # 69 comprobaciones en Chromium y capturas en tests/screenshots/
 ```
 
 ## Probarla

@@ -1448,6 +1448,7 @@
 
     async function openOriginal() {
         if (state.pdfView) return closeOriginal();
+        if (!state.original && state.book && state.book.hasOriginal && state.assetsReady) await state.assetsReady;
         if (!state.original || !LV.pdfview) {
             toast(state.book && state.book.hasOriginal ? 'Cargando el documento…' : 'Este documento no tiene vista original.', { duration: 1800 });
             return;
@@ -1455,6 +1456,7 @@
         if (state.playing) pause();
         const view = $('#original-view');
         view.hidden = false;
+        el.reader.classList.add('is-original');
         $('#btn-original').classList.add('is-on');
         try {
             state.pdfView = await LV.pdfview.open($('#original-host'), state.original.blob, {
@@ -1473,6 +1475,7 @@
         if (v && v.destroy) { try { v.destroy(); } catch (e) { /* ya cerrado */ } }
         $('#original-host').innerHTML = '';
         $('#original-view').hidden = true;
+        el.reader.classList.remove('is-original');
         $('#btn-original').classList.remove('is-on');
     }
 
@@ -2186,7 +2189,7 @@
         hideFinish();
         state.book = book;
         state.tok = T.tokenize(book.text);
-        loadAssets(book);
+        state.assetsReady = loadAssets(book);
         state.chunkCache.clear();
         buildPrefix();
         state.pos = clamp(book.index || 0, 0, Math.max(0, n() - 1));
