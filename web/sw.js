@@ -4,7 +4,7 @@
  * - Other same-origin GET: network-first, falling back to cache.
  * Bump CACHE_VERSION whenever shell files change.
  */
-const CACHE_VERSION = 'v9';
+const CACHE_VERSION = 'v10';
 const SHELL_CACHE = `lv-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `lv-runtime-${CACHE_VERSION}`;
 const FONT_CACHE = `lv-fonts-${CACHE_VERSION}`;
@@ -18,6 +18,8 @@ const SHELL = [
   './js/importers.js',
   './js/training.js',
   './js/speech.js',
+  './js/indra.js',
+  './js/ocr-worker.js',
   './js/pdfview.js',
   './css/pdfview.css',
   './css/training.css',
@@ -50,7 +52,8 @@ self.addEventListener('activate', (event) => {
   const keep = new Set([SHELL_CACHE, RUNTIME_CACHE, FONT_CACHE]);
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => !keep.has(k)).map((k) => caches.delete(k))))
+      // lv-indra-*: modelos del OCR (ocr-worker.js), van por su propia versión.
+      .then((keys) => Promise.all(keys.filter((k) => !keep.has(k) && !k.startsWith('lv-indra-')).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });

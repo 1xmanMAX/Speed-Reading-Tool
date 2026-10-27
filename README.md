@@ -76,9 +76,15 @@ En Android (y en cualquier pantalla táctil), el lector se controla con gestos y
   | Documentos | Word (DOCX), OpenDocument (ODT, ODS, ODP), RTF, Markdown, HTML, TXT (UTF-8 y Windows-1252) |
   | Presentaciones y datos | PowerPoint (PPTX), Excel (XLSX), CSV, TSV, JSON |
   | Subtítulos | SRT, VTT |
-  | Imágenes y capturas | OCR en español e inglés |
+  | Imágenes y capturas | OCR (Indra): español, inglés y unos 50 idiomas de alfabeto latino |
 
   - **PDF escaneados:** las páginas sin texto se pasan por **OCR** automáticamente.
+  - **OCR con [Indra](https://github.com/datalab-to/indra)** (Datalab), ejecutado en tu dispositivo con ONNX Runtime:
+    - endereza páginas torcidas o giradas, respeta las columnas y quita cabeceras y números de página;
+    - en nuestras pruebas con páginas escaneadas inclinadas acierta ~99,5 % de las palabras (Tesseract, 2–50 %) y es 2–3 veces más rápido;
+    - la primera vez descarga unos 9 MB de modelos (más el motor, de la CDN) y luego funciona sin conexión;
+    - si no puede cargarse, se usa Tesseract como respaldo.
+    - Licencias: código Apache 2.0; modelos con licencia OpenRAIL-M modificada (gratis para uso personal, investigación y empresas con menos de 20 M$).
   - **Imágenes del documento:** se conservan las de EPUB, Word, ODT, FB2, Kindle, PowerPoint, HTML, Markdown y PDF.
     - En los modos de página aparecen dentro del texto; al hacer clic se abren a tamaño completo.
     - En los modos de una palabra se muestran unos segundos al llegar a ellas. La pausa se ajusta en *Ajustes → Imágenes*.
@@ -158,6 +164,8 @@ web/                 Interfaz (HTML, CSS y JS sin dependencias)
   js/text.js         Motor de texto: tokenización, ORP, bloques y tiempos
   js/app.js          Reproductor, modos, biblioteca, estadísticas e interfaz
   js/importers.js    TXT/MD/HTML/EPUB/PDF/OCR (las librerías se cargan solo cuando hacen falta)
+  js/indra.js        OCR Indra portado a JavaScript (detección, lectura y orden de lectura)
+  js/ocr-worker.js   Web Worker que carga ONNX Runtime y los modelos de Indra
   js/training.js     Ejercicios de entrenamiento y generador de preguntas
   js/speech.js       Voz: voces del sistema (Microsoft) y Azure neuronal
   js/storage.js      IndexedDB y localStorage

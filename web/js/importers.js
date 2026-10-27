@@ -1768,7 +1768,7 @@
     }).then(function (res) { ensureText(res.text, 'El archivo JSON no contiene textos largos que leer.'); return res; });
   }
 
-  // ---------------------------------------------------------------- OCR (Tesseract)
+  // ---------------------------------------------------------------- OCR (Tesseract, respaldo)
 
   var OCR_STATUS = {
     'loading tesseract core': 'Cargando motor de OCR…',
@@ -1788,6 +1788,159 @@
         return Promise.resolve(Tesseract.createWorker('spa+eng', 1, { logger: function (m) { if (m && logger) logger(m); } }))
           .catch(function () { throw new Error('No se pudo iniciar el OCR. Revisa tu conexión.'); });
       });
+  }
+
+  // ---------------------------------------------------------------- OCR (motor)
+  // Motor principal: Indra (Datalab, js/indra.js en un Web Worker): endereza la
+  // página, respeta columnas y quita cabeceras y números de página. Si no se puede
+  // cargar (sin conexión la primera vez, navegador sin WebAssembly), Tesseract.
+  //
+  //   engine = await createOcrEngine(onStatus)        onStatus(mensaje)
+  //   { text } = await engine.recognize(canvas|blob, onProgress)   onProgress(0..1)
+  //   engine.terminate()
+
+  var SCRIPT_URL = (document.currentScript && document.currentScript.src) || location.href;
+  var OCR_MAX_SIDE = 4000;
+
+  function mb(bytes) { return (bytes / 1048576).toFixed(1).replace('.', ','); }
+
+  async function sourceCanvas(source) {
+    if (source && source.getContext) return source;
+    var bmp = null;
+    if (typeof createImageBitmap === 'function') {
+      try { bmp = await createImageBitmap(source); } catch (e) { bmp = null; }
+    }
+    if (!bmp) {
+      bmp = await new Promise(function (resolve, reject) {
+        var url = URL.createObjectURL(source), im = new Image();
+        im.onload = function () { URL.revokeObjectURL(url); resolve(im); };
+        im.onerror = function () { URL.revokeObjectURL(url); reject(new Error('No se pudo leer la imagen. Prueba con otro formato (PNG o JPG).')); };
+        im.src = url;
+      });
+    }
+    var w = bmp.width, h = bmp.height, s = Math.min(1, OCR_MAX_SIDE / Math.max(w, h));
+    var c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(w * s));
+    c.height = Math.max(1, Math.round(h * s));
+    var ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff'; // las transparencias, sobre papel blanco
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(bmp, 0, 0, c.width, c.height);
+    if (bmp.close) bmp.close();
+    return c;
+  }
+
+  // Página en gris (0 = negro) como la lee Indra: { width, height, data }.
+  async function grayPage(source) {
+    var c = await sourceCanvas(source);
+    var d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    var g = new Uint8Array(c.width * c.height);
+    for (var i = 0, j = 0; j < g.length; i += 4, j++) {
+      g[j] = (d[i] * 4899 + d[i + 1] * 9617 + d[i + 2] * 1868 + 8192) >> 14; // como cv2 (BT.601)
+    }
+    return { width: c.width, height: c.height, data: g };
+  }
+
+  function createIndraEngine(onStatus) {
+    var worker;
+    try {
+      worker = new Worker(new URL('ocr-worker.js', SCRIPT_URL).href);
+    } catch (e) {
+      return Promise.reject(e);
+    }
+    var seq = 0, pending = new Map();
+    worker.onmessage = function (e) {
+      var m = e.data || {}, p = pending.get(m.id);
+      if (!p) return;
+      if (m.type === 'progress') { if (p.progress) p.progress(m); return; }
+      pending.delete(m.id);
+      if (m.type === 'done') p.resolve(m.result);
+      else p.reject(new Error(m.message || 'Error del OCR'));
+    };
+    worker.onerror = function (e) {
+      if (e && e.preventDefault) e.preventDefault();
+      pending.forEach(function (p) { p.reject(new Error('El OCR se detuvo.')); });
+      pending.clear();
+    };
+    function call(msg, progress, transfer) {
+      return new Promise(function (resolve, reject) {
+        msg.id = ++seq;
+        pending.set(msg.id, { resolve: resolve, reject: reject, progress: progress });
+        worker.postMessage(msg, transfer || []);
+      });
+    }
+    var engine = {
+      name: 'indra',
+      recognize: function (source, onProgress) {
+        return grayPage(source).then(function (page) {
+          return call({ type: 'read', page: page }, function (m) {
+            if (onProgress && typeof m.frac === 'number') onProgress(m.frac);
+          }, [page.data.buffer]);
+        });
+      },
+      terminate: function () { worker.terminate(); }
+    };
+    return call({ type: 'init' }, function (m) {
+      if (!onStatus) return;
+      if (m.stage === 'download') {
+        onStatus('Descargando OCR Indra (' + mb(m.loaded) + ' de ' + mb(m.total) + ' MB, solo la primera vez)…');
+      } else if (m.stage === 'load') onStatus('Cargando OCR Indra…');
+      else if (m.stage === 'prepare') onStatus('Preparando OCR Indra…');
+    }).then(function () { return engine; }, function (err) {
+      worker.terminate();
+      throw err;
+    });
+  }
+
+  function createTesseractEngine(onStatus) {
+    var current = null;
+    return createOcrWorker(function (m) {
+      if (m.status === 'recognizing text') { if (current) current(m.progress || 0); }
+      else if (OCR_STATUS[m.status] && onStatus) onStatus(OCR_STATUS[m.status]);
+    }).then(function (worker) {
+      return {
+        name: 'tesseract',
+        recognize: function (source, onProgress) {
+          current = onProgress;
+          return worker.recognize(source).then(function (res) {
+            return { text: (res && res.data && res.data.text) || '' };
+          }, function () {
+            throw new Error('No se pudo leer la imagen. Prueba con otro formato (PNG o JPG).');
+          });
+        },
+        terminate: function () { return worker.terminate(); }
+      };
+    });
+  }
+
+  // Indra, y Tesseract si Indra no arranca o falla en una página.
+  function createOcrEngine(onStatus) {
+    var inner = null;
+    function fallback(err) {
+      if (window.console) console.warn('OCR Indra no disponible, se usa Tesseract:', err && err.message);
+      if (onStatus) onStatus('Cargando OCR alternativo…');
+      return createTesseractEngine(onStatus).then(function (t) { inner = t; return t; });
+    }
+    var start = LV.ocrEngine === 'tesseract' ? createTesseractEngine(onStatus) : createIndraEngine(onStatus).catch(fallback);
+    return start.then(function (e) {
+      inner = e;
+      return {
+        get name() { return inner.name; },
+        recognize: function (source, onProgress) {
+          return inner.recognize(source, onProgress).then(function (res) {
+            LV.lastOcrEngine = inner.name; // para depurar y para las pruebas
+            return res;
+          }).catch(function (err) {
+            if (inner.name !== 'indra') throw err;
+            try { inner.terminate(); } catch (e2) { /* nada */ }
+            return fallback(err).then(function (t) {
+              return t.recognize(source, onProgress).then(function (res) { LV.lastOcrEngine = t.name; return res; });
+            });
+          });
+        },
+        terminate: function () { try { return inner.terminate(); } catch (e) { return null; } }
+      };
+    });
   }
 
   // ---------------------------------------------------------------- PDF
@@ -1970,20 +2123,17 @@
             try {
               if (!worker) {
                 report(base, 'Cargando OCR para páginas escaneadas…');
-                worker = await createOcrWorker(function (m) {
-                  if (m.status === 'recognizing text') {
-                    report(((ocrPage - 1 + (m.progress || 0)) / N) * 92,
-                      'Reconociendo texto (OCR) en la página ' + ocrPage + ' de ' + N + '…');
-                  } else if (OCR_STATUS[m.status]) {
-                    report(((ocrPage - 1) / N) * 92, OCR_STATUS[m.status]);
-                  }
+                worker = await createOcrEngine(function (msg) {
+                  report(((Math.max(ocrPage, num) - 1) / N) * 92, msg);
                 });
               }
               ocrPage = num;
               report(base, 'Reconociendo texto (OCR) en la página ' + num + ' de ' + N + '…');
-              var ocr = await worker.recognize(canvas);
+              var ocr = await worker.recognize(canvas, function (f) {
+                report(((ocrPage - 1 + f) / N) * 92, 'Reconociendo texto (OCR) en la página ' + ocrPage + ' de ' + N + '…');
+              });
               ocrUsed = true;
-              var otext = normalizeText(san((ocr && ocr.data && ocr.data.text) || ''));
+              var otext = normalizeText(san((ocr && ocr.text) || ''));
               if (otext.replace(/\s+/g, '').length > chars) paras = otext.split('\n\n');
               addImage = otext.replace(/\s+/g, '').length < 40;
             } catch (e) {
@@ -2063,26 +2213,20 @@
     var safeReport = makeReporter(onProgress);
     safeReport(0, 'Cargando OCR…');
     // Progreso global: carga 0–30 %, reconocimiento 30–100 %.
-    var logger = function (m) {
-      var p = typeof m.progress === 'number' ? m.progress : 0;
-      var pct = m.status === 'recognizing text' ? 30 + p * 70 : Math.min(30, p * 30);
-      safeReport(Math.round(pct), OCR_STATUS[m.status] || 'Procesando imagen…');
-    };
-    return createOcrWorker(logger)
-      .then(function (worker) {
-        return worker.recognize(blob).then(function (res) {
-          return res;
-        }, function () {
-          throw new Error('No se pudo leer la imagen. Prueba con otro formato (PNG o JPG).');
+    return createOcrEngine(function (msg) { safeReport(10, msg); })
+      .then(function (engine) {
+        safeReport(30, 'Reconociendo texto…');
+        return engine.recognize(blob, function (f) {
+          safeReport(Math.round(30 + f * 70), 'Reconociendo texto…');
         }).then(function (res) {
-          return Promise.resolve(worker.terminate()).catch(function () {}).then(function () { return res; });
+          return Promise.resolve(engine.terminate()).catch(function () {}).then(function () { return res; });
         }, function (err) {
-          return Promise.resolve(worker.terminate()).catch(function () {}).then(function () { throw err; });
+          return Promise.resolve(engine.terminate()).catch(function () {}).then(function () { throw err; });
         });
       })
       .then(function (res) {
         safeReport(100, 'Texto reconocido');
-        var raw = (res && res.data && res.data.text) || '';
+        var raw = (res && res.text) || '';
         var text = normalizeText(san(raw));
         return {
           title: captureTitle(new Date()),

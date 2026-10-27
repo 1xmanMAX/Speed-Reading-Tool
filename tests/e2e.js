@@ -303,6 +303,17 @@ async function openSample(page) {
     await page.waitForFunction(() => !document.querySelector('#view-reader').hidden && LV.app.state.book && /PDF/i.test(LV.app.state.book.source), null, { timeout: 120000 });
     const scanned = await page.evaluate(() => LV.app.state.book.text.slice(0, 80));
     check('PDF escaneado: texto reconocido por OCR', /murci|veloz|saxof/i.test(scanned), scanned);
+    check('El OCR usado es Indra', await page.evaluate(() => LV.lastOcrEngine) === 'indra', await page.evaluate(() => LV.lastOcrEngine));
+
+    // Página escaneada torcida y con ruido: Indra la endereza y quita cabecera y número de página
+    await goHome(page);
+    await page.setInputFiles('#file-input', path.join(FIX, 'pagina-inclinada.jpg'));
+    await page.waitForFunction(() => LV.app.state.book && LV.app.state.book.source === 'OCR' && /hidalgo/.test(LV.app.state.book.text), null, { timeout: 120000 });
+    const tilted = await page.evaluate(() => LV.app.state.book.text);
+    check('OCR de página inclinada: empieza por el título', /^Capítulo primero/.test(tilted), tilted.slice(0, 60));
+    check('OCR de página inclinada: texto completo y sin cabecera ni número de página',
+        /En un lugar de la Mancha, de cuyo nombre no quiero acordarme/.test(tilted) && /podadera\./.test(tilted) &&
+        !/DON QUIJOTE|\b17\b/.test(tilted), tilted.slice(-80));
 
     await goHome(page);
     await page.setInputFiles('#file-input', path.join(FIX, 'shot.png'));
