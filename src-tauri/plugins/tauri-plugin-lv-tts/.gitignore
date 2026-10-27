@@ -1,0 +1,4 @@
+# Copia de la API de Tauri que se genera al compilar
+/android/.tauri/
+/android/build/
+/target/

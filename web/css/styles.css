@@ -1740,3 +1740,6 @@ body.mini-mode .mini { position: fixed; inset: 0; border-radius: 0; }
 
 /* Con la vista original abierta, el visor tiene su propia barra */
 .view-reader.is-original .hud, .view-reader.is-original .edge-progress { display: none; }
+
+/* Sin ventana flotante disponible (app móvil o navegador sin soporte) */
+body.no-mini #btn-pip, body.no-mini .book-act[data-float] { display: none; }

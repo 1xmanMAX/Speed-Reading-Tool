@@ -14,6 +14,7 @@
     "clipboard-manager:allow-write-text",
     "opener:default",
     "clipboard-manager:allow-read-image",
-    "deep-link:default"
+    "deep-link:default",
+    "lv-tts:default"
   ]
 }

@@ -1517,7 +1517,10 @@
     const MINI_W = 480;
     const MINI_H = 190;
 
+    const IS_MOBILE_APP = !!window.__TAURI__ && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
     function miniSupport() {
+        if (IS_MOBILE_APP) return null; // en la app móvil no hay ventanas flotantes
         if (window.__TAURI__ && window.__TAURI__.core) return 'tauri';
         if ('documentPictureInPicture' in window) return 'docpip';
         if (document.pictureInPictureEnabled && HTMLCanvasElement.prototype.captureStream) return 'video';
@@ -2524,6 +2527,8 @@
         bindNative();
         bindTraining();
         bindMini();
+        document.body.classList.toggle('no-mini', !miniSupport());
+        document.body.classList.toggle('mobile-app', IS_MOBILE_APP);
         configureSpeech();
         populateVoices();
         if (window.speechSynthesis && speechSynthesis.addEventListener) speechSynthesis.addEventListener('voiceschanged', () => populateVoices());

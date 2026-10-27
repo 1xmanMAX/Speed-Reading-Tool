@@ -83,7 +83,7 @@ jobs:
       - uses: android-actions/setup-android@v3
 
       - name: Install NDK
-        run: sdkmanager --install "ndk;27.0.12077973"
+        run: sdkmanager --install "ndk;27.0.12077973" "build-tools;34.0.0"
 
       - uses: actions/setup-node@v4
         with:
@@ -91,7 +91,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+          targets: aarch64-linux-android,armv7-linux-androideabi
 
       - uses: swatinem/rust-cache@v2
         with:
@@ -104,16 +104,50 @@ jobs:
       - name: Init Android project
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
-        run: npx tauri android init
+        run: npx tauri android init --ci
 
-      - name: Build APK
+      - name: Build APK (arm64 + armv7)
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
-        run: npx tauri android build --apk
+        run: npx tauri android build --apk --target aarch64 --target armv7
 
-      # Unsigned unless you configure signing (see Tauri docs: "Android code signing").
+      # Firma: usa la clave de los secretos ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD /
+      # ANDROID_KEY_ALIAS si existen (recomendado: así las actualizaciones se instalan encima).
+      # Si no, genera una clave temporal para que el APK se pueda instalar igualmente.
+      - name: Sign APK
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -e
+          BT="$ANDROID_HOME/build-tools/34.0.0"
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > release.jks
+          else
+            echo "::warning::Sin secretos de firma: se usa una clave temporal (las actualizaciones no se instalarán encima)."
+            KEYSTORE_PASS=temporal123; KEY_ALIAS=lecturaveloz
+            keytool -genkeypair -keystore release.jks -alias "$KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$KEYSTORE_PASS" -keypass "$KEYSTORE_PASS" -dname "CN=Lectura Veloz"
+          fi
+          UNSIGNED=$(find src-tauri/gen/android/app/build/outputs/apk -name '*release-unsigned.apk' | head -1)
+          mkdir -p dist
+          "$BT/zipalign" -f -p 4 "$UNSIGNED" dist/aligned.apk
+          "$BT/apksigner" sign --ks release.jks --ks-key-alias "$KEY_ALIAS" --ks-pass "pass:$KEYSTORE_PASS" \
+            --key-pass "pass:$KEYSTORE_PASS" --out dist/LecturaVeloz.apk dist/aligned.apk
+          "$BT/apksigner" verify dist/LecturaVeloz.apk
+          rm -f release.jks dist/aligned.apk
+
       - uses: actions/upload-artifact@v4
         with:
           name: lectura-veloz-android
-          path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          path: dist/LecturaVeloz.apk
           if-no-files-found: error
+
+      - name: Attach APK to release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          draft: true
+          files: dist/LecturaVeloz.apk

@@ -2098,6 +2098,7 @@ dependencies = [
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-deep-link",
  "tauri-plugin-global-shortcut",
+ "tauri-plugin-lv-tts",
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
 ]
@@ -3820,6 +3821,14 @@ dependencies = [
  "tauri",
  "tauri-plugin",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "tauri-plugin-lv-tts"
+version = "0.1.0"
+dependencies = [
+ "tauri",
+ "tauri-plugin",
 ]
 
 [[package]]

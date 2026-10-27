@@ -222,6 +222,16 @@
   }
 
   function listVoices() {
+    if (nativeTts) {
+      return nativeVoices().then(function (list) {
+        var es = list.filter(function (v) { return langPrefix(v.lang) === 'es'; });
+        var out = es.concat(list.filter(function (v) { return langPrefix(v.lang) !== 'es'; }));
+        if (azureConfigured()) out = out.concat(AZURE_VOICES.map(function (v) {
+          var c = {}; for (var k in v) c[k] = v[k]; return c;
+        }));
+        return out;
+      });
+    }
     return waitSystemVoices().then(function (raw) {
       var seen = {};
       var sys = [];
@@ -654,6 +664,100 @@
     return handle;
   }
 
+  // ---------------------------------------------------------------- Voz nativa (app de Android)
+  // El WebView de Android no implementa speechSynthesis: en la app se usa el motor
+  // TextToSpeech del sistema a través del plugin propio "lv-tts".
+
+  var tauriCore = hasWindow && window.__TAURI__ && window.__TAURI__.core;
+  var nativeTts = !!(tauriCore && /Android/i.test((hasWindow && navigator.userAgent) || ''));
+  var nativeSeq = 0;
+  var nativeCur = null;
+  var nativeListening = null;
+  var nativeVoiceCache = null;
+
+  function nativeListen() {
+    if (nativeListening) return nativeListening;
+    nativeListening = Promise.all(['word', 'end', 'error'].map(function (ev) {
+      return tauriCore.addPluginListener('lv-tts', ev, function (p) {
+        var c = nativeCur;
+        if (c && p && p.id === c.id) c.on(ev, p);
+      });
+    })).catch(function () { nativeListening = null; });
+    return nativeListening;
+  }
+
+  function nativeVoiceName(v) {
+    var lang = v.lang || '';
+    var label = lang;
+    try { label = new Intl.DisplayNames(['es'], { type: 'language' }).of(lang) || lang; } catch (e) { /* sin Intl */ }
+    label = label.charAt(0).toUpperCase() + label.slice(1);
+    var variant = String(v.id || '').replace(/^[a-z]{2,3}-[a-z]{2,3}-x-/i, '').replace(/[-_](local|network)$/i, '');
+    return label + ' · ' + variant + (v.network ? ' (en línea)' : '');
+  }
+
+  function nativeVoices() {
+    if (nativeVoiceCache) return Promise.resolve(nativeVoiceCache);
+    return tauriCore.invoke('plugin:lv-tts|voices').then(function (r) {
+      nativeVoiceCache = ((r && r.voices) || []).map(function (v) {
+        return {
+          id: v.id, name: nativeVoiceName(v), lang: v.lang || '', provider: 'system',
+          microsoft: false, natural: (v.quality || 0) >= 400, local: !v.network
+        };
+      });
+      return nativeVoiceCache;
+    }).catch(function () { return []; });
+  }
+
+  function speakNative(text, opts) {
+    var words = wordsOf(text);
+    var id = 'lv' + (++nativeSeq);
+    var cancelled = false;
+    var ended = false;
+    var watchdog = 0;
+    var finish = function (fn, arg) {
+      if (ended || cancelled) return;
+      ended = true;
+      clearTimeout(watchdog);
+      if (nativeCur === handle) nativeCur = null;
+      if (current === handle) current = null;
+      safeCall(fn, arg);
+    };
+    var handle = {
+      id: id,
+      cancel: function () {
+        if (cancelled) return;
+        cancelled = true;
+        clearTimeout(watchdog);
+        if (nativeCur === handle) nativeCur = null;
+        if (current === handle) current = null;
+        tauriCore.invoke('plugin:lv-tts|stop').catch(function () {});
+      },
+      on: function (ev, p) {
+        if (ended || cancelled) return;
+        if (ev === 'word') safeCall(opts.onWord, p.start || 0, Math.max(0, (p.end || 0) - (p.start || 0)));
+        else if (ev === 'end') finish(opts.onEnd);
+        else if (ev === 'error') finish(opts.onError, new Error('El motor de voz del teléfono no pudo leer el texto.'));
+      }
+    };
+    nativeCur = handle;
+    current = handle;
+    nativeListen().then(function () {
+      if (cancelled) return null;
+      return tauriCore.invoke('plugin:lv-tts|speak', {
+        text: text, id: id, rate: cfg.rate, pitch: cfg.pitch,
+        lang: opts.lang || 'es-ES', voice: cfg.voiceId || null
+      });
+    }).then(function () {
+      if (cancelled) return;
+      safeCall(opts.onStart);
+      // Si el motor nunca avisa del final, seguir igualmente
+      watchdog = setTimeout(function () { finish(opts.onEnd); }, (estimateSeconds(words, cfg.rate) * 2 + 4) * 1000);
+    }).catch(function (e) {
+      finish(opts.onError, new Error((e && (e.message || e)) || 'La voz no está disponible en este teléfono.'));
+    });
+    return handle;
+  }
+
   // ---------------------------------------------------------------- API pública
 
   function speak(text, opts) {
@@ -665,7 +769,8 @@
       setTimeout(function () { if (!c) safeCall(opts.onEnd); }, 0);
       return { cancel: function () { c = true; } };
     }
-    return cfg.provider === 'azure' ? speakAzure(t, opts) : speakSystem(t, opts);
+    if (cfg.provider === 'azure') return speakAzure(t, opts);
+    return nativeTts ? speakNative(t, opts) : speakSystem(t, opts);
   }
 
   function stopCurrent() {
@@ -675,6 +780,7 @@
 
   function stop() {
     stopCurrent();
+    if (nativeTts) tauriCore.invoke('plugin:lv-tts|stop').catch(function () {});
     if (systemSupported) { try { synth.cancel(); } catch (e) { /* ignorar */ } }
   }
 
@@ -695,6 +801,7 @@
     isSpeaking: function () { return !!current; },
     AZURE_VOICES: AZURE_VOICES,
     systemSupported: systemSupported,
+    nativeTts: nativeTts,
     MAX_CHARS: MAX_CHARS,
     // Utilidades internas expuestas para pruebas.
     _buildSsml: buildSsml,
@@ -704,6 +811,6 @@
   // true si hay voces del sistema o Azure está configurado.
   Object.defineProperty(LV.speech, 'supported', {
     enumerable: true,
-    get: function () { return systemSupported || (azureCapable && azureConfigured()); }
+    get: function () { return nativeTts || systemSupported || (azureCapable && azureConfigured()); }
   });
 })();
