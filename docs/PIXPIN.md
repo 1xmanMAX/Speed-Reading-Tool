@@ -14,6 +14,39 @@ Este manual explica cómo configurarla paso a paso. Luego da recetas listas para
 
 ---
 
+## PixPin Pro (tu app): botón ⚡ y marcador verde sincronizado
+
+Si usas **PixPin Pro** (las versiones de Android y Windows de tu repositorio), la integración es directa, sin capturas ni OCR:
+
+1. **Abre un PDF, EPUB, Word o texto en PixPin Pro.**
+2. **Pulsa ⚡ «Lectura veloz».**
+   - En Android está en la barra superior del visor.
+   - En Windows está en el menú ⋮ del lector.
+3. **Lectura Veloz se abre directamente en el lector**, sin pasar por la biblioteca, justo donde está tu **marcador verde 🟢** o, si no lo hay, donde ibas leyendo. El libro se guarda con la etiqueta **PixPin 🟢**.
+4. **Mientras lees, Lectura Veloz devuelve tu posición a PixPin en segundo plano.**
+   - Lo hace al pausar, al salir y cada cierto tiempo mientras lees.
+   - El 🟢 de PixPin se mueve solo, aunque PixPin esté cerrado, y sin que su ventana salte al frente.
+5. **La próxima vez gana siempre la posición más reciente.**
+   - Si avanzaste en PixPin, Lectura Veloz continúa desde ahí.
+   - Si avanzaste en Lectura Veloz, PixPin ya tiene el verde puesto donde lo dejaste.
+
+| Dirección | Android | Windows |
+|---|---|---|
+| PixPin → Lectura Veloz | `lecturaveloz://pixpin/abrir?...` con el documento compartido (`content://`) | `lecturaveloz://pixpin/abrir?...` con la ruta del archivo |
+| Lectura Veloz → PixPin | aviso `com.forge.pixpin.LECTURA_VELOZ` en segundo plano | enlace `pixpinmax://lectura-veloz?...` (sin traer ventanas al frente) |
+
+**Parámetros:**
+- `doc`: identificador estable del documento en PixPin.
+- `tipo`: `pdf` (página + fracción) o `texto` (fracción del documento).
+- `pagina`, `frac`, `fraccion` y `paginas`: la posición.
+- `t`: cuándo se movió el verde por última vez, en milisegundos.
+
+Los detalles de cada lado están en `docs/integracion-lectura-veloz.md` de cada repositorio de PixPin Pro.
+
+> Si usas el **PixPin original** (el de capturas de pixpin.com), sigue el resto de este manual: atajo + OCR.
+
+---
+
 ## Índice
 
 1. [Requisitos](#1-requisitos)
