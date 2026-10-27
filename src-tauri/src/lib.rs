@@ -211,22 +211,34 @@ fn pixpin_read_file<R: Runtime>(
 ) -> Result<tauri::ipc::Response, String> {
     let canon = std::path::PathBuf::from(&path)
         .canonicalize()
-        .map_err(|_| "No se encontró el documento de PixPin.".to_string())?;
-    let in_cache = app
-        .path()
-        .app_cache_dir()
-        .ok()
+        .map_err(|e| format!("No se encontró el documento de PixPin ({path}): {e}"))?;
+    let cache = app.path().app_cache_dir().ok();
+    let in_cache = cache
+        .as_ref()
         .and_then(|d| d.canonicalize().ok())
         .is_some_and(|d| canon.starts_with(d));
     let allowed = in_cache || state.allowed.lock().unwrap().contains(&canon);
     if !allowed {
-        return Err("Este documento no fue enviado por PixPin.".into());
+        return Err(format!(
+            "Este documento no fue enviado por PixPin ({}; caché: {}).",
+            canon.display(),
+            cache.map(|d| d.display().to_string()).unwrap_or_else(|| "desconocida".into())
+        ));
     }
-    let meta = std::fs::metadata(&canon).map_err(|e| e.to_string())?;
-    if !meta.is_file() || meta.len() > MAX_PIXPIN_FILE {
-        return Err("El documento es demasiado grande o no es un archivo.".into());
+    let meta = std::fs::metadata(&canon)
+        .map_err(|e| format!("No se pudo mirar el documento de PixPin ({}): {e}", canon.display()))?;
+    if !meta.is_file() {
+        return Err(format!("{} no es un archivo.", canon.display()));
     }
-    let bytes = std::fs::read(&canon).map_err(|e| e.to_string())?;
+    if meta.len() > MAX_PIXPIN_FILE {
+        return Err(format!(
+            "El documento es demasiado grande ({} MB; máximo {} MB).",
+            meta.len() / (1024 * 1024),
+            MAX_PIXPIN_FILE / (1024 * 1024)
+        ));
+    }
+    let bytes = std::fs::read(&canon)
+        .map_err(|e| format!("No se pudo leer el documento de PixPin ({}): {e}", canon.display()))?;
     Ok(tauri::ipc::Response::new(bytes))
 }
 

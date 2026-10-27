@@ -196,6 +196,10 @@ class TtsPlugin(private val activity: Activity) : Plugin(activity) {
     /**
      * Copia a la caché un documento compartido por PixPin (content://, con permiso
      * temporal de lectura) y devuelve su ruta para que la app lo importe.
+     *
+     * Desde JS se pide como `plugin:lv-tts|copy_uri` (snake_case: así lo comprueba el permiso
+     * `allow-copy-uri`); Tauri lo pasa a camelCase para llamar a este método.
+     * Si falla, el mensaje dice qué paso falló y por qué (permiso, archivo que no está…).
      */
     @Command
     fun copyUri(invoke: Invoke) {
@@ -203,19 +207,26 @@ class TtsPlugin(private val activity: Activity) : Plugin(activity) {
         Thread {
             try {
                 val uri = Uri.parse(args.uri)
-                if (uri.scheme != "content" && uri.scheme != "file") throw IllegalArgumentException("URI no válida")
+                if (uri.scheme != "content" && uri.scheme != "file") throw IllegalArgumentException("URI no válida: «${args.uri}»")
                 val safe = (args.name ?: "documento").replace(Regex("[^\\p{L}\\p{N}._ -]"), "_").take(120).ifBlank { "documento" }
                 val dir = File(activity.cacheDir, "pixpin").apply { mkdirs() }
                 val out = File(dir, safe)
-                activity.contentResolver.openInputStream(uri).use { input ->
-                    if (input == null) throw IllegalStateException("No se pudo abrir el documento")
-                    out.outputStream().use { input.copyTo(it) }
-                }
+                val input = (try {
+                    activity.contentResolver.openInputStream(uri)
+                } catch (e: SecurityException) {
+                    throw IllegalStateException("PixPin no dio permiso de lectura para $uri (${e.message})")
+                } catch (e: java.io.FileNotFoundException) {
+                    throw IllegalStateException("PixPin no encuentra el archivo $uri (${e.message})")
+                }) ?: throw IllegalStateException("el sistema no devolvió nada para $uri")
+                input.use { i -> out.outputStream().use { i.copyTo(it) } }
+                if (out.length() == 0L) throw IllegalStateException("el archivo de PixPin está vacío ($uri)")
                 val res = JSObject()
                 res.put("path", out.absolutePath)
+                res.put("size", out.length())
                 invoke.resolve(res)
             } catch (e: Exception) {
-                invoke.reject("No se pudo leer el documento de PixPin: ${e.message}")
+                android.util.Log.w("LecturaVelozPixPin", "copyUri ${args.uri}", e)
+                invoke.reject("No se pudo leer el documento de PixPin: ${e.message ?: e.javaClass.simpleName}")
             }
         }.start()
     }

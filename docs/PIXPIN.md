@@ -43,6 +43,23 @@ Si usas **PixPin Pro** (las versiones de Android y Windows de tu repositorio), l
 
 Los detalles de cada lado están en `docs/integracion-lectura-veloz.md` de cada repositorio de PixPin Pro.
 
+**En Android** el documento llega como `uri=content://com.forge.pixpin.fileprovider/…` (con permiso
+de lectura para `com.lecturaveloz.app`). La interfaz lo copia a su caché con el plugin nativo y lo lee:
+
+```js
+const { path } = await core.invoke('plugin:lv-tts|copy_uri', { uri, name: nombre }); // copia a cache/pixpin/
+const bytes = await core.invoke('pixpin_read_file', { path });                       // solo caché o rutas de PixPin
+await core.invoke('plugin:lv-tts|notify_pixpin', { doc, tipo, pagina, frac, fraccion, t, palabra, total });
+```
+
+> **Ojo con el nombre de los comandos del plugin:** se piden en *snake_case* (`copy_uri`,
+> `notify_pixpin`). Tauri comprueba el permiso (`lv-tts:allow-copy-uri`) con ese nombre y luego lo
+> pasa a *camelCase* para llamar al método Kotlin (`copyUri`). Pedirlos como `copyUri` hace que Tauri
+> los rechace con «Command plugin:lv-tts|copyUri not allowed by ACL»: es lo que impedía abrir los
+> documentos de PixPin hasta la 0.3.1.
+
+Si algo falla, el aviso dice qué paso falló (copiar, leer o importar) y el motivo exacto.
+
 > Si usas el **PixPin original** (el de capturas de pixpin.com), sigue el resto de este manual: atajo + OCR.
 
 ---
@@ -285,6 +302,7 @@ await event.listen('quick-read-image', (e) => ocr(e.payload));       // "data:im
 await event.listen('reader-cmd', (e) => orden(e.payload));           // 'toggle' | 'faster' | …
 const pendiente = await core.invoke('quick_read_ready');             // null | {type:'text',text} | {type:'image',dataUrl}
 const texto = await core.invoke('read_clipboard');                   // string | null
+// Comandos del plugin nativo (Android): siempre en snake_case → 'plugin:lv-tts|copy_uri', 'plugin:lv-tts|notify_pixpin'
 await core.invoke('set_mini_mode', { enabled: true });               // ventana flotante (escritorio)
 ```
 

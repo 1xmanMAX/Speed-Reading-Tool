@@ -2859,12 +2859,44 @@
         };
     }
 
+    /**
+     * El texto de un error, venga como venga: Tauri rechaza `invoke` con una cadena (no con un
+     * `Error`), así que `err.message` sale vacío y se perdía el motivo de verdad.
+     */
+    function errText(err) {
+        if (!err) return '';
+        if (typeof err === 'string') return err;
+        if (err.message) return String(err.message);
+        try { return JSON.stringify(err); } catch (e) { return String(err); }
+    }
+
+    /** Un paso de la apertura desde PixPin: si falla, el aviso dice cuál y por qué. */
+    async function pixpinStep(what, fn) {
+        try {
+            return await fn();
+        } catch (err) {
+            const e = new Error(`${what}: ${errText(err) || 'error desconocido'}`);
+            e.pixpin = true;
+            throw e;
+        }
+    }
+
     async function pixpinBytes(p) {
         const core = window.__TAURI__.core;
         let path = p.ruta;
-        if (!path && p.uri) path = (await core.invoke('plugin:lv-tts|copyUri', { uri: p.uri, name: p.nombre })).path;
-        if (!path) throw new Error('PixPin no envió el documento.');
-        return new Uint8Array(await core.invoke('pixpin_read_file', { path }));
+        // Los comandos de un plugin móvil se piden en snake_case (`copy_uri`): Tauri comprueba el
+        // permiso con ese nombre (`lv-tts:allow-copy-uri`) y lo pasa a camelCase (`copyUri`) para
+        // el método Kotlin. Con `copyUri` el permiso no casa y Tauri lo rechaza («not allowed by ACL»).
+        if (!path && p.uri) {
+            const r = await pixpinStep('No se pudo copiar el documento de PixPin', () =>
+                core.invoke('plugin:lv-tts|copy_uri', { uri: p.uri, name: p.nombre }));
+            path = r && r.path;
+        }
+        if (!path) throw new Error('PixPin no envió el documento (falta «uri» o «ruta» en el enlace).');
+        const buf = await pixpinStep('No se pudo leer el documento copiado', () => core.invoke('pixpin_read_file', { path }));
+        const bytes = buf instanceof ArrayBuffer ? new Uint8Array(buf) : ArrayBuffer.isView(buf) ? new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength) : new Uint8Array(buf || []);
+        if (!bytes.length) throw new Error('El documento de PixPin llegó vacío.');
+        return bytes;
     }
 
     /** Palabra correspondiente a la posición de PixPin (página + fracción, o fracción del documento) */
@@ -2921,16 +2953,30 @@
         const payload = { doc: b.pixpin.doc, tipo: b.pixpin.tipo, pagina, frac, fraccion, t: now, palabra: pos, total: n() };
         const core = window.__TAURI__.core;
         const req = IS_MOBILE_APP
-            ? core.invoke('plugin:lv-tts|notifyPixpin', payload)
+            ? core.invoke('plugin:lv-tts|notify_pixpin', payload)
             : core.invoke('pixpin_sync', { progress: Object.assign({ ruta: b.pixpin.ruta || null }, payload) });
-        req.catch(() => {});
+        req.catch((err) => console.warn('Lectura Veloz → PixPin: no se pudo devolver el punto:', errText(err)));
         b.pixpin.syncedAt = now;
         S.books.patch(b.id, { pixpin: b.pixpin }).catch(() => {});
     }
 
+    // El mismo enlace puede llegar dos veces al arrancar (evento y `quick_read_ready`): sin esto se
+    // importaba dos veces a la vez y salían dos libros.
+    let pixpinBusy = null;
     async function openFromPixpin(urlStr) {
         const p = pixpinParams(urlStr);
-        if (!p) return;
+        if (!p) {
+            if (urlStr) toast('El enlace de PixPin no trae el documento («doc»).', { error: true, duration: 6000 });
+            return;
+        }
+        if (pixpinBusy && pixpinBusy.url === urlStr) return pixpinBusy.done;
+        const job = { url: urlStr };
+        job.done = openFromPixpinNow(p).finally(() => { if (pixpinBusy === job) pixpinBusy = null; });
+        pixpinBusy = job;
+        return job.done;
+    }
+
+    async function openFromPixpinNow(p) {
         if (state.playing) pause(false);
         let book = (await S.books.all()).find((b) => b.pixpin && b.pixpin.doc === p.doc);
         const isNew = !book;
@@ -2938,9 +2984,10 @@
             const t = toast(`Abriendo «${p.nombre}» desde PixPin…`, { progress: true });
             try {
                 const bytes = await pixpinBytes(p);
-                const res = await LV.importers.importFile(new File([bytes], p.nombre), (pct, msg) => t.update(pct, msg));
+                const res = await pixpinStep(`No se pudo importar «${p.nombre}»`, () =>
+                    LV.importers.importFile(new File([bytes], p.nombre), (pct, msg) => t.update(pct, msg)));
                 t.close();
-                if (!res.text || !res.text.replace(/\uFFFC/g, '').trim()) throw new Error('No se encontró texto en el documento.');
+                if (!res.text || !res.text.replace(/\uFFFC/g, '').trim()) throw new Error(`No se encontró texto en «${p.nombre}».`);
                 const images = Array.isArray(res.images) ? res.images.filter((x) => x && x.blob) : [];
                 book = await S.books.create({
                     title: res.title || p.nombre,
@@ -2953,7 +3000,9 @@
                 });
             } catch (err) {
                 t.close();
-                toast((err && err.message) || 'No se pudo abrir el documento de PixPin.', { error: true, duration: 6000 });
+                const why = errText(err);
+                console.error('PixPin → Lectura Veloz:', why, err);
+                toast(why && err && err.pixpin ? why : `No se pudo abrir el documento de PixPin${why ? ': ' + why : '.'}`, { error: true, duration: 9000 });
                 return;
             }
         }

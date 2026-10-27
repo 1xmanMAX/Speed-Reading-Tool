@@ -505,6 +505,74 @@ async function openSample(page) {
         await pctx.close();
     }
 
+    /* ------- PixPin en Android (simulado, con la comprobación de permisos de Tauri) ------- */
+    console.log('\nIntegración con PixPin en Android');
+    {
+        const actx = await browser.newContext({
+            viewport: { width: 412, height: 860 },
+            userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36',
+        });
+        const ap = await actx.newPage();
+        ap.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+        await ap.addInitScript(() => {
+            window.__calls = [];
+            window.__ev = {};
+            window.__fail = null;
+            // Como Tauri 2: el permiso de un comando de plugin se mira con el nombre tal cual llega
+            // (`lv-tts:allow-copy-uri` permite `copy_uri`, no `copyUri`), y luego se pasa a camelCase.
+            const ALLOWED = ['speak', 'stop', 'voices', 'vibrate', 'copy_uri', 'notify_pixpin', 'register_listener', 'remove_listener'];
+            const md = '# Capítulo uno\n\n' + Array.from({ length: 40 }, (_, i) => 'Frase número ' + (i + 1) + ' del documento de prueba.').join(' ') + '\n';
+            window.__TAURI__ = {
+                core: {
+                    invoke: async (c, a) => {
+                        window.__calls.push([c, JSON.parse(JSON.stringify(a || {}))]);
+                        const m = /^plugin:lv-tts\|(.+)$/.exec(c);
+                        if (m && !ALLOWED.includes(m[1])) throw 'Command ' + c + ' not allowed by ACL';
+                        if (c === 'plugin:lv-tts|copy_uri') {
+                            if (window.__fail) throw window.__fail;
+                            return { path: '/data/user/0/com.lecturaveloz.app/cache/pixpin/' + a.name };
+                        }
+                        if (c === 'pixpin_read_file') return new TextEncoder().encode(md).buffer;
+                        return null;
+                    },
+                    addPluginListener: async () => ({ unregister() {} }),
+                },
+                event: { listen: async (n, f) => { window.__ev[n] = f; return () => {}; } },
+            };
+        });
+        await ap.goto(`http://localhost:${PORT}/`);
+        await ap.waitForFunction(() => window.__ev && window.__ev['pixpin-open']);
+        const uri = 'content://com.forge.pixpin.fileprovider/guardados/Mi%20nota%20(1).md';
+        const link = (doc, nombre) => 'lecturaveloz://pixpin/abrir?doc=' + doc + '&nombre=' + encodeURIComponent(nombre) +
+            '&uri=' + encodeURIComponent(uri) + '&tipo=texto&pagina=0&frac=0&fraccion=0.5&paginas=0&t=' + Date.now();
+        const l1 = link('nota01', 'Mi nota (1) ñ+.md');
+        // Llega dos veces seguidas (evento y quick_read_ready al arrancar en frío)
+        await ap.evaluate((u) => { window.__ev['pixpin-open']({ payload: u }); window.__ev['pixpin-open']({ payload: u }); }, l1);
+        await ap.waitForFunction(() => LV.app.state.book && LV.app.state.book.source === 'PixPin', null, { timeout: 30000 });
+        await ap.waitForTimeout(500);
+        const calls = await ap.evaluate(() => window.__calls.map((c) => c[0]));
+        const copy = await ap.evaluate(() => (window.__calls.find((c) => c[0] === 'plugin:lv-tts|copy_uri') || [])[1]);
+        check('PixPin Android: copia el content:// con `plugin:lv-tts|copy_uri`', !!copy && copy.uri === uri, calls);
+        check('PixPin Android: el nombre llega descodificado y con su extensión', copy && copy.name === 'Mi nota (1) ñ+.md', copy);
+        const ab = await ap.evaluate(() => ({ title: LV.app.state.book.title, pos: LV.app.state.pos, n: LV.app.state.tok.words.length, books: 0 }));
+        ab.books = await ap.evaluate(async () => (await LV.storage.books.all()).length);
+        check('PixPin Android: abre el documento en su marcador verde', ab.pos > ab.n * 0.3 && ab.pos < ab.n * 0.7, ab);
+        check('PixPin Android: el enlace repetido no duplica el libro', ab.books === 1, ab.books);
+        await ap.evaluate(() => { LV.app.play(); });
+        await ap.waitForTimeout(800);
+        await ap.evaluate(() => LV.app.pause());
+        await ap.waitForTimeout(300);
+        const back = await ap.evaluate(() => window.__calls.filter((c) => /notify/i.test(c[0])).map((c) => c[0]));
+        check('PixPin Android: devuelve el punto con `plugin:lv-tts|notify_pixpin`', back.length > 0 && back.every((c) => c === 'plugin:lv-tts|notify_pixpin'), back);
+        // Si falla, el aviso dice qué paso y por qué
+        await ap.evaluate(() => { window.__fail = 'No se pudo leer el documento de PixPin: PixPin no dio permiso de lectura'; });
+        await ap.evaluate((u) => window.__ev['pixpin-open']({ payload: u }), link('otro02', 'Otro.pdf'));
+        await ap.waitForTimeout(800);
+        const err = await ap.evaluate(() => Array.from(document.querySelectorAll('.toast, [class*="toast"]')).map((x) => x.textContent).join(' | '));
+        check('PixPin Android: el error dice el motivo de verdad', /copiar el documento de PixPin/.test(err) && /permiso de lectura/.test(err), err);
+        await actx.close();
+    }
+
     check('Sin errores de JavaScript en consola', errors.length === 0, errors);
 
     await browser.close();
