@@ -210,6 +210,9 @@ fn quick_read_waiting<R: Runtime>(app: &AppHandle<R>) {
     });
 }
 
+/// Órdenes aceptadas por `lecturaveloz://control/<orden>` (las mismas que los atajos globales).
+const CONTROL_CMDS: &[&str] = &["toggle", "faster", "slower", "next", "prev", "float", "voice"];
+
 fn handle_urls<R: Runtime>(app: &AppHandle<R>, urls: Vec<Url>) {
     for url in urls {
         if url.scheme() != SCHEME {
@@ -225,6 +228,17 @@ fn handle_urls<R: Runtime>(app: &AppHandle<R>, urls: Vec<Url>) {
         // `lecturaveloz://clipboard`, `lecturaveloz://read`, `lecturaveloz:` …
         match url.host_str().unwrap_or("") {
             "" | "clipboard" | "read" => quick_read_waiting(app),
+            // `lecturaveloz://control/<orden>` → controla el lector sin robar el foco
+            // (pensado para scripts de PixPin, AutoHotkey, accesos directos…).
+            "control" => {
+                let cmd = url.path().trim_matches('/');
+                if CONTROL_CMDS.contains(&cmd) {
+                    #[cfg(desktop)]
+                    reader_cmd(app, cmd);
+                    #[cfg(mobile)]
+                    let _ = app.emit_to("main", "reader-cmd", cmd.to_string());
+                }
+            }
             _ => focus_main(app),
         }
     }

@@ -205,13 +205,88 @@
                         <button class="pill-step" id="chunk-up" aria-label="Más palabras">+</button>
                     </div>
                     <div class="pill-meta hide-sm"><strong id="meta-progress">0%</strong><span id="meta-left">—</span></div>
+                    <button class="pill-speed touch-only" id="speed-badge" title="Velocidad: desliza arriba/abajo en el lado derecho">
+                        <strong id="speed-badge-val">300</strong><small id="speed-badge-unit">ppm</small>
+                    </button>
                 </div>
+            </div>
+
+            <!-- Táctil: zonas de gestos laterales (en los modos de página el centro sigue desplazando el texto) -->
+            <div class="gesture-edge gesture-edge-left touch-only" data-side="left" aria-hidden="true"></div>
+            <div class="gesture-edge gesture-edge-right touch-only" data-side="right" aria-hidden="true"></div>
+
+            <!-- Indicador grande de gestos (velocidad, tamaño, posición) -->
+            <div class="gesture-osd" id="gesture-osd" aria-live="polite" hidden>
+                <div class="go-icon" id="go-icon"></div>
+                <div class="go-main"><strong id="go-value"></strong><span id="go-label"></span></div>
+                <div class="go-bar"><i id="go-fill"></i></div>
+                <p class="go-preview" id="go-preview"></p>
+            </div>
+            <div class="tap-ripple" id="tap-ripple" aria-hidden="true"></div>
+
+            <!-- Táctil: progreso con números, fácil de arrastrar -->
+            <div class="touch-meta touch-only" aria-hidden="true">
+                <span id="tm-progress">0%</span>
+                <span id="tm-left">—</span>
             </div>
 
             <!-- Progreso en el borde inferior -->
             <div class="edge-progress" id="scrubber">
                 <div class="scrubber-track"><div class="scrubber-fill" id="scrubber-fill"></div><div class="scrubber-thumb" id="scrubber-thumb"></div></div>
                 <div class="scrubber-tip" id="scrubber-tip" hidden></div>
+            </div>
+
+            <!-- Panel rápido (mantener pulsado o tocar la velocidad) -->
+            <div class="sheet-scrim" id="sheet-scrim" hidden></div>
+            <section class="sheet" id="quick-sheet" aria-label="Controles rápidos" hidden>
+                <div class="sheet-grip" aria-hidden="true"></div>
+                <div class="sheet-modes" id="sheet-modes"></div>
+                <label class="sheet-slider">
+                    <span class="sheet-label">Velocidad</span>
+                    <strong class="sheet-value" id="sheet-speed-val">300 ppm</strong>
+                    <input type="range" id="sheet-speed" min="60" max="1200" step="10">
+                </label>
+                <label class="sheet-slider" id="sheet-chunk-row">
+                    <span class="sheet-label">Palabras por bloque</span>
+                    <strong class="sheet-value" id="sheet-chunk-val">3</strong>
+                    <input type="range" id="sheet-chunk" min="1" max="8" step="1">
+                </label>
+                <label class="sheet-slider">
+                    <span class="sheet-label">Tamaño del texto</span>
+                    <strong class="sheet-value" id="sheet-size-val">56 px</strong>
+                    <input type="range" id="sheet-size" min="14" max="120" step="1">
+                </label>
+                <div class="sheet-actions">
+                    <button class="sheet-act" id="sheet-voice"><svg><use href="#i-headphones"/></svg><span>Voz</span></button>
+                    <button class="sheet-act" id="sheet-original"><svg><use href="#i-doc"/></svg><span>Original</span></button>
+                    <button class="sheet-act" id="sheet-theme"><svg><use href="#i-sun"/></svg><span>Tema</span></button>
+                    <button class="sheet-act" id="sheet-gestures"><svg><use href="#i-spark"/></svg><span>Gestos</span></button>
+                    <button class="sheet-act" id="sheet-settings"><svg><use href="#i-settings"/></svg><span>Ajustes</span></button>
+                </div>
+            </section>
+
+            <!-- Guía de gestos (primera vez) -->
+            <div class="coach" id="gesture-coach" hidden>
+                <div class="coach-zone coach-left">
+                    <div class="coach-icon">↕</div>
+                    <strong>Tamaño del texto</strong>
+                    <span>Desliza arriba o abajo</span>
+                    <em>Doble toque: frase anterior</em>
+                </div>
+                <div class="coach-zone coach-center">
+                    <div class="coach-icon">☝</div>
+                    <strong>Pausa / reanudar</strong>
+                    <span>Un toque</span>
+                    <em>Mantén pulsado: controles</em>
+                    <div class="coach-swipe">⟵ Desliza a los lados para avanzar o retroceder ⟶</div>
+                </div>
+                <div class="coach-zone coach-right">
+                    <div class="coach-icon">↕</div>
+                    <strong>Velocidad</strong>
+                    <span>Desliza arriba o abajo</span>
+                    <em>Doble toque: frase siguiente</em>
+                </div>
+                <button class="btn coach-ok" id="coach-ok">Entendido</button>
             </div>
         </main>
 

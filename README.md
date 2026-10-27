@@ -43,6 +43,22 @@ Lectura Veloz es una aplicación de lectura rápida, moderna, gratuita y sin con
   - Cada libro de la biblioteca tiene un botón ▣ para abrirlo directamente en la ventana flotante.
   - Detalles en [docs/VENTANA-FLOTANTE.md](docs/VENTANA-FLOTANTE.md).
 
+## En el móvil: gestos al estilo VLC
+
+En Android (y en cualquier pantalla táctil), el lector se controla con gestos y muestra los valores en grande mientras deslizas:
+
+| Gesto | Acción |
+|---|---|
+| Deslizar ↕ en el lado **derecho** | Velocidad (palabras por minuto o velocidad de la voz) |
+| Deslizar ↕ en el lado **izquierdo** | Tamaño del texto |
+| Deslizar ↔ | Avanzar o retroceder, con vista previa de la palabra de destino |
+| Un toque | Pausa / reanudar |
+| Doble toque a la izquierda o a la derecha | Frase anterior o siguiente |
+| Mantener pulsado (o tocar la velocidad) | Panel rápido con controles deslizantes, modos, voz y tema |
+
+- Abajo solo quedan «frase anterior», un botón ▶ grande, «frase siguiente» y la velocidad, más una barra de progreso fácil de arrastrar con números.
+- La primera vez aparece una guía de gestos; puedes volver a verla desde el panel rápido.
+
 ## Lectura en voz alta con voces de Microsoft
 
 - **Microsoft Edge:** ofrece gratis las voces neuronales «Online (Natural)», por ejemplo *Microsoft Elvira Online (Natural)*. La app las detecta y las pone primero.
@@ -107,7 +123,7 @@ Lectura Veloz es una aplicación de lectura rápida, moderna, gratuita y sin con
 ## Pruebas
 
 ```bash
-npm test             # 69 comprobaciones en Chromium y capturas en tests/screenshots/
+npm test             # 77 comprobaciones en Chromium y capturas en tests/screenshots/
 ```
 
 ## Probarla

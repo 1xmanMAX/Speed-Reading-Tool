@@ -277,6 +277,11 @@
         const v = voiceActive();
         el.wpmValue.textContent = v ? Number(settings.voiceRate).toFixed(1) + '×' : settings.wpm;
         el.wpmUnit.textContent = v ? 'voz' : 'ppm';
+        const badge = $('#speed-badge-val');
+        if (badge) {
+            badge.textContent = el.wpmValue.textContent;
+            $('#speed-badge-unit').textContent = el.wpmUnit.textContent;
+        }
     }
 
     function paintRange(input) {
@@ -879,6 +884,7 @@
         el.scrollBox.hidden = m.kind !== 'scroll';
         el.peri.hidden = m.kind !== 'peri';
         el.chunkStepper.hidden = !m.chunk;
+        el.reader.classList.toggle('gesture-full', m.kind === 'rsvp' || m.kind === 'peri');
         $('#chunk-sep').hidden = !m.chunk;
 
         if (m.kind === 'rsvp') renderRsvp();
@@ -1235,6 +1241,10 @@
             ? ((total - pos) / (165 * (Number(settings.voiceRate) || 1))) * 60000
             : state.prefix ? (state.prefix[total] - state.prefix[pos]) * (60000 / settings.wpm) : 0;
         el.metaLeft.textContent = left > 0 ? `quedan ${fmtDuration(left)}` : 'terminado';
+        if (TOUCH) {
+            $('#tm-progress').textContent = `${Math.round(frac * 100)}% · ${fmtNum(pos + 1)} / ${fmtNum(total)}`;
+            $('#tm-left').textContent = el.metaLeft.textContent;
+        }
         renderMini();
     }
 
@@ -1512,12 +1522,286 @@
     })();
 
     /* =====================================================
+       Gestos táctiles al estilo VLC
+       - Derecha ↕: velocidad · Izquierda ↕: tamaño del texto
+       - Deslizar ↔: avanzar/retroceder con vista previa
+       - Toque: pausa · Doble toque a los lados: frase anterior/siguiente
+       - Mantener pulsado: panel rápido
+       ===================================================== */
+    const isFullGesture = () => mode().kind === 'rsvp' || mode().kind === 'peri';
+
+    function speedInfo() {
+        return voiceActive()
+            ? { key: 'voiceRate', val: Number(settings.voiceRate), min: 0.5, max: 3, step: 0.05, fmt: (v) => v.toFixed(2).replace(/0$/, '') + '×', label: 'velocidad de la voz' }
+            : { key: 'wpm', val: settings.wpm, min: 60, max: 1500, step: 10, fmt: (v) => String(Math.round(v)), label: 'palabras por minuto' };
+    }
+
+    function sizeInfo() {
+        return mode().kind === 'rsvp' || mode().kind === 'peri'
+            ? { key: 'rsvpSize', val: settings.rsvpSize, min: 28, max: 120, step: 2 }
+            : { key: 'pageSize', val: settings.pageSize, min: 14, max: 32, step: 1 };
+    }
+
+    function showOsd(icon, value, label, frac, preview) {
+        const o = $('#gesture-osd');
+        $('#go-icon').textContent = icon;
+        $('#go-value').textContent = value;
+        $('#go-label').textContent = label;
+        $('#go-fill').style.width = clamp(frac, 0, 1) * 100 + '%';
+        $('#go-preview').textContent = preview || '';
+        o.hidden = false;
+    }
+
+    let osdHide = 0;
+    function hideOsd(delay = 500) {
+        clearTimeout(osdHide);
+        osdHide = setTimeout(() => { $('#gesture-osd').hidden = true; }, delay);
+    }
+
+    function ripple(x, y, text) {
+        const r = $('#tap-ripple');
+        const box = el.reader.getBoundingClientRect();
+        r.style.left = x - box.left + 'px';
+        r.style.top = y - box.top + 'px';
+        r.textContent = text;
+        r.classList.remove('is-on');
+        void r.offsetWidth;
+        r.classList.add('is-on');
+    }
+
+    function bindGestures() {
+        if (!TOUCH) return;
+        document.body.classList.add('touch');
+        let g = null;
+        let lastTap = null;
+        let tapTimer = 0;
+
+        const zoneOf = (x) => {
+            const r = el.reader.getBoundingClientRect();
+            const f = (x - r.left) / r.width;
+            return f < 0.33 ? 'left' : f > 0.67 ? 'right' : 'center';
+        };
+
+        const down = (e, forced) => {
+            if (e.pointerType === 'mouse' || g || !state.tok) return;
+            if (e.target.closest('button, a, input, .fig, .pv-root')) return;
+            g = { id: e.pointerId, x0: e.clientX, y0: e.clientY, t0: performance.now(), zone: forced || zoneOf(e.clientX), forced: !!forced, axis: null, el: e.currentTarget };
+            g.longTimer = setTimeout(() => {
+                if (g && !g.axis) { g.long = true; openSheet(); }
+            }, 500);
+            if (forced || isFullGesture()) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) { /* sin captura */ } }
+        };
+
+        const move = (e) => {
+            if (!g || e.pointerId !== g.id || g.long) return;
+            const dx = e.clientX - g.x0;
+            const dy = e.clientY - g.y0;
+            if (!g.axis) {
+                if (Math.hypot(dx, dy) < 14) return;
+                clearTimeout(g.longTimer);
+                if (Math.abs(dy) > Math.abs(dx)) {
+                    // En los modos de página el centro desplaza el texto: solo los bordes cambian valores
+                    if (!g.forced && !isFullGesture()) { g.axis = 'none'; return; }
+                    g.axis = 'v';
+                    g.kind = g.zone === 'left' ? 'size' : 'speed';
+                    g.info = g.kind === 'size' ? sizeInfo() : speedInfo();
+                } else {
+                    g.axis = 'h';
+                    g.startPos = state.pos;
+                }
+                try { g.el.setPointerCapture(g.id); } catch (err) { /* sin captura */ }
+            }
+            if (g.axis === 'v') {
+                const info = g.info;
+                const px = g.kind === 'size' ? 14 : 12; // píxeles por paso (sensibilidad)
+                const steps = Math.round(-dy / px);
+                const v = clamp(info.val + steps * info.step, info.min, info.max);
+                g.value = Math.round(v * 100) / 100;
+                const frac = (g.value - info.min) / (info.max - info.min);
+                if (g.kind === 'speed') {
+                    showOsd('⚡', info.fmt(g.value), info.label, frac);
+                    // La velocidad de lectura se aplica en vivo; la de la voz al soltar
+                    if (info.key === 'wpm' && g.value !== settings.wpm) setSetting('wpm', g.value);
+                } else {
+                    showOsd('Aa', `${g.value} px`, 'tamaño del texto', frac);
+                    if (g.value !== settings[info.key]) setSetting(info.key, g.value);
+                }
+            } else if (g.axis === 'h') {
+                const w = el.reader.clientWidth || 400;
+                const perPx = clamp(n() / (w * 3), 0.12, 60);
+                const target = clamp(Math.round(g.startPos + dx * perPx), 0, n() - 1);
+                g.target = target;
+                const diff = target - g.startPos;
+                const words = state.tok.words.slice(target, target + 6).join(' ');
+                showOsd(diff >= 0 ? '⏩' : '⏪', (diff >= 0 ? '+' : '−') + fmtNum(Math.abs(diff)), `palabras · ${Math.round((target / Math.max(1, n() - 1)) * 100)}%`, target / Math.max(1, n() - 1), words + '…');
+            }
+        };
+
+        const up = (e) => {
+            if (!g || e.pointerId !== g.id) return;
+            const cur = g;
+            g = null;
+            clearTimeout(cur.longTimer);
+            if (cur.long) return;
+            if (cur.axis === 'v') {
+                if (cur.kind === 'speed' && cur.info.key === 'voiceRate') setSetting('voiceRate', cur.value);
+                hideOsd(700);
+                return;
+            }
+            if (cur.axis === 'h') {
+                hideOsd(400);
+                if (cur.target !== undefined && cur.target !== cur.startPos) seek(cur.target);
+                return;
+            }
+            if (cur.axis === 'none' || performance.now() - cur.t0 > 400) return;
+            // Toques
+            if (cur.zone === 'center') {
+                if (!isFullGesture() && !cur.forced) return; // en modos de página el toque sirve para elegir palabra
+                toggle();
+                ripple(e.clientX, e.clientY, state.playing ? '▶' : '❚❚');
+                return;
+            }
+            const now = performance.now();
+            if (lastTap && lastTap.zone === cur.zone && now - lastTap.t < 320) {
+                clearTimeout(tapTimer);
+                lastTap = null;
+                stepSentence(cur.zone === 'left' ? -1 : 1);
+                ripple(e.clientX, e.clientY, cur.zone === 'left' ? '« frase' : 'frase »');
+                return;
+            }
+            lastTap = { zone: cur.zone, t: now };
+            const x = e.clientX, y = e.clientY;
+            clearTimeout(tapTimer);
+            tapTimer = setTimeout(() => {
+                lastTap = null;
+                if (!isFullGesture() && !cur.forced) return;
+                toggle();
+                ripple(x, y, state.playing ? '▶' : '❚❚');
+            }, 320);
+        };
+
+        const cancel = (e) => {
+            if (g && e.pointerId === g.id) { clearTimeout(g.longTimer); g = null; hideOsd(200); }
+        };
+
+        el.stage.addEventListener('pointerdown', (e) => down(e, null));
+        $$('.gesture-edge').forEach((edge) => edge.addEventListener('pointerdown', (e) => down(e, edge.dataset.side)));
+        [el.stage, ...$$('.gesture-edge')].forEach((t) => {
+            t.addEventListener('pointermove', move);
+            t.addEventListener('pointerup', up);
+            t.addEventListener('pointercancel', cancel);
+        });
+        // Mantener pulsado: el sistema lo anuncia como «menú contextual» (y cancela el toque)
+        [el.stage, ...$$('.gesture-edge')].forEach((t) => t.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            if (g && g.axis) return;
+            if (g) { clearTimeout(g.longTimer); g = null; }
+            if ($('#quick-sheet').hidden) openSheet();
+        }));
+
+        $('#speed-badge').addEventListener('click', openSheet);
+        bindSheet();
+        $('#coach-ok').addEventListener('click', () => {
+            $('#gesture-coach').hidden = true;
+            try { localStorage.setItem('lv.coach', '1'); } catch (e) { /* sin almacenamiento */ }
+        });
+    }
+
+    function maybeShowCoach() {
+        if (!TOUCH) return;
+        let seen = false;
+        try { seen = localStorage.getItem('lv.coach') === '1'; } catch (e) { seen = false; }
+        if (!seen) $('#gesture-coach').hidden = false;
+    }
+
+    /* --- Panel rápido --- */
+    function syncSheet() {
+        const sp = speedInfo();
+        const speed = $('#sheet-speed');
+        speed.min = sp.min;
+        speed.max = sp.key === 'wpm' ? 1200 : sp.max;
+        speed.step = sp.key === 'wpm' ? 10 : 0.05;
+        speed.value = sp.val;
+        $('#sheet-speed-val').textContent = sp.key === 'wpm' ? `${sp.val} ppm` : sp.fmt(sp.val);
+        $('#sheet-chunk-row').hidden = !mode().chunk;
+        $('#sheet-chunk').value = settings.chunkSize;
+        $('#sheet-chunk-val').textContent = settings.chunkSize;
+        const sz = sizeInfo();
+        const size = $('#sheet-size');
+        size.min = sz.min;
+        size.max = sz.max;
+        size.step = sz.step;
+        size.value = sz.val;
+        $('#sheet-size-val').textContent = `${sz.val} px`;
+        $$('#quick-sheet input[type="range"]').forEach(paintRange);
+        $('#sheet-voice').classList.toggle('is-on', voiceActive());
+        $('#sheet-original').disabled = !(state.book && state.book.hasOriginal);
+        $$('.sheet-mode').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === settings.mode)));
+    }
+
+    let sheetOpenedAt = 0;
+
+    function openSheet() {
+        if (!state.tok) return;
+        $('#sheet-modes').innerHTML = MODES.map((m) => `<button class="sheet-mode" data-mode="${m.id}" aria-pressed="false">${m.name}</button>`).join('');
+        syncSheet();
+        $('#quick-sheet').hidden = false;
+        $('#sheet-scrim').hidden = false;
+        sheetOpenedAt = performance.now();
+        hud.show(true);
+    }
+
+    function closeSheet() {
+        $('#quick-sheet').hidden = true;
+        $('#sheet-scrim').hidden = true;
+        hud.poke();
+    }
+
+    function bindSheet() {
+        // El clic que llega al levantar el dedo tras mantener pulsado no debe cerrar el panel
+        $('#sheet-scrim').addEventListener('click', () => { if (performance.now() - sheetOpenedAt > 450) closeSheet(); });
+        $('#sheet-modes').addEventListener('click', (e) => {
+            const b = e.target.closest('[data-mode]');
+            if (!b) return;
+            setMode(b.dataset.mode);
+            syncSheet();
+        });
+        $('#sheet-speed').addEventListener('input', (e) => {
+            const sp = speedInfo();
+            const v = Number(e.target.value);
+            if (sp.key === 'wpm') setSetting('wpm', v);
+            else $('#sheet-speed-val').textContent = sp.fmt(v);
+            paintRange(e.target);
+            if (sp.key === 'wpm') $('#sheet-speed-val').textContent = `${v} ppm`;
+        });
+        $('#sheet-speed').addEventListener('change', (e) => {
+            if (speedInfo().key === 'voiceRate') setSetting('voiceRate', Number(e.target.value));
+        });
+        $('#sheet-chunk').addEventListener('input', (e) => {
+            setSetting('chunkSize', Number(e.target.value));
+            $('#sheet-chunk-val').textContent = settings.chunkSize;
+            paintRange(e.target);
+        });
+        $('#sheet-size').addEventListener('input', (e) => {
+            setSetting(sizeInfo().key, Number(e.target.value));
+            $('#sheet-size-val').textContent = `${e.target.value} px`;
+            paintRange(e.target);
+        });
+        $('#sheet-voice').addEventListener('click', () => { toggleVoice(); syncSheet(); });
+        $('#sheet-original').addEventListener('click', () => { closeSheet(); openOriginal(); });
+        $('#sheet-theme').addEventListener('click', cycleTheme);
+        $('#sheet-gestures').addEventListener('click', () => { closeSheet(); $('#gesture-coach').hidden = false; });
+        $('#sheet-settings').addEventListener('click', () => { closeSheet(); openPanel('settings'); });
+    }
+
+    /* =====================================================
        Ventana flotante (mini reproductor)
        ===================================================== */
     const MINI_W = 480;
     const MINI_H = 190;
 
     const IS_MOBILE_APP = !!window.__TAURI__ && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const TOUCH = IS_MOBILE_APP || (window.matchMedia && matchMedia('(pointer: coarse)').matches);
 
     function miniSupport() {
         if (IS_MOBILE_APP) return null; // en la app móvil no hay ventanas flotantes
@@ -1838,8 +2122,9 @@
         ['pointermove', 'pointerdown', 'wheel'].forEach((ev) => el.reader.addEventListener(ev, () => hud.poke(), { passive: true }));
 
         // Clic en el escenario
-        el.rsvp.addEventListener('click', toggle);
-        el.peri.addEventListener('click', toggle);
+        // En pantallas táctiles los toques los gestiona el controlador de gestos
+        el.rsvp.addEventListener('click', () => { if (!TOUCH) toggle(); });
+        el.peri.addEventListener('click', () => { if (!TOUCH) toggle(); });
         [el.page, el.scrollPage].forEach((p) => p.addEventListener('click', (e) => {
             const fig = e.target.closest('.fig');
             if (fig) { openLightbox(Number(fig.dataset.img)); return; }
@@ -1874,19 +2159,6 @@
         scrub.addEventListener('pointerup', end);
         scrub.addEventListener('pointercancel', end);
         scrub.addEventListener('pointerleave', () => { el.scrubTip.hidden = true; });
-
-        // Gestos táctiles en RSVP: deslizar para avanzar/retroceder
-        let touchX = null;
-        el.stage.addEventListener('touchstart', (e) => { touchX = e.touches[0].clientX; }, { passive: true });
-        el.stage.addEventListener('touchend', (e) => {
-            if (touchX === null || mode().kind === 'page' || mode().kind === 'scroll') return;
-            const dx = e.changedTouches[0].clientX - touchX;
-            touchX = null;
-            if (Math.abs(dx) > 60) {
-                stepSentence(dx < 0 ? 1 : -1);
-                e.preventDefault();
-            }
-        });
 
         window.addEventListener('resize', debounce(() => {
             if (state.win.el) {
@@ -1952,7 +2224,8 @@
         const k = e.key;
         if (inReader) hud.poke();
         if (k === 'Escape') {
-            if (!el.modeMenu.hidden) toggleModeMenu(false);
+            if (!$('#quick-sheet').hidden) closeSheet();
+            else if (!el.modeMenu.hidden) toggleModeMenu(false);
             else if (state.pdfView) closeOriginal();
             else if (!el.scrim.hidden) closePanels();
             else if (state.mini) closeMini();
@@ -2219,6 +2492,7 @@
         el.readerTitle.textContent = state.book ? state.book.title : '';
         document.body.classList.add('in-reader');
         syncModeUI();
+        maybeShowCoach();
         hud.show();
         updateSessionClock();
     }
@@ -2527,6 +2801,7 @@
         bindNative();
         bindTraining();
         bindMini();
+        bindGestures();
         document.body.classList.toggle('no-mini', !miniSupport());
         document.body.classList.toggle('mobile-app', IS_MOBILE_APP);
         configureSpeech();

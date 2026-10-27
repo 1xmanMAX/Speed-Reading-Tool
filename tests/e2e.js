@@ -403,6 +403,64 @@ async function openSample(page) {
     await shot(mob, '34-movil-ajustes');
     await mob.context().close();
 
+    /* ---------------- Táctil (Android) ---------------- */
+    console.log('\nTáctil: gestos al estilo VLC (390×844)');
+    {
+        const tctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, colorScheme: 'dark' });
+        const tp = await tctx.newPage();
+        tp.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+        const cdp = await tctx.newCDPSession(tp);
+        const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y]) => ({ x, y })) });
+        const swipe = async (x0, y0, x1, y1, name) => {
+            await touch('touchStart', [[x0, y0]]);
+            for (let i = 1; i <= 12; i++) { await touch('touchMove', [[x0 + ((x1 - x0) * i) / 12, y0 + ((y1 - y0) * i) / 12]]); await tp.waitForTimeout(16); }
+            if (name) await tp.screenshot({ path: path.join(OUT, name + '.png') });
+            await touch('touchEnd', []);
+            await tp.waitForTimeout(150);
+        };
+        const tap = async (x, y) => { await touch('touchStart', [[x, y]]); await tp.waitForTimeout(40); await touch('touchEnd', []); };
+        const ts = () => tp.evaluate(() => ({ pos: LV.app.state.pos, playing: LV.app.state.playing, wpm: LV.app.settings.wpm, size: LV.app.settings.rsvpSize, sheet: !document.querySelector('#quick-sheet').hidden }));
+        await tp.goto(`http://localhost:${PORT}/`);
+        await tp.waitForFunction(() => window.LV && LV.app);
+        await tp.click('#load-sample');
+        await tp.waitForFunction(() => LV.app.state.tok);
+        await tp.waitForTimeout(300);
+        check('Táctil: guía de gestos la primera vez', await tp.isVisible('#gesture-coach'));
+        await tp.screenshot({ path: path.join(OUT, '40-tactil-guia.png') });
+        await tp.tap('#coach-ok');
+        await tp.evaluate(() => LV.app.seek(20));
+        await tp.screenshot({ path: path.join(OUT, '41-tactil-lector.png') });
+        let t0 = await ts();
+        await swipe(330, 520, 330, 300, '42-tactil-velocidad');
+        let t1 = await ts();
+        check('Táctil: deslizar arriba a la derecha sube la velocidad', t1.wpm > t0.wpm, [t0.wpm, t1.wpm]);
+        await swipe(60, 400, 60, 520);
+        let t2 = await ts();
+        check('Táctil: deslizar abajo a la izquierda reduce el texto', t2.size < t1.size, [t1.size, t2.size]);
+        await swipe(100, 420, 320, 420, '43-tactil-avanzar');
+        let t3 = await ts();
+        check('Táctil: deslizar en horizontal avanza en el texto', t3.pos > t2.pos, [t2.pos, t3.pos]);
+        await tap(195, 420);
+        await tp.waitForTimeout(200);
+        check('Táctil: un toque inicia la lectura', (await ts()).playing);
+        await tap(195, 420);
+        await tp.waitForTimeout(200);
+        check('Táctil: otro toque la pausa', !(await ts()).playing);
+        const before = (await ts()).pos;
+        await tap(340, 420);
+        await tp.waitForTimeout(80);
+        await tap(340, 420);
+        await tp.waitForTimeout(200);
+        check('Táctil: doble toque a la derecha salta a la frase siguiente', (await ts()).pos > before);
+        await touch('touchStart', [[195, 420]]);
+        await tp.waitForTimeout(750);
+        await touch('touchEnd', []);
+        await tp.waitForTimeout(350);
+        check('Táctil: mantener pulsado abre el panel rápido', (await ts()).sheet);
+        await tp.screenshot({ path: path.join(OUT, '44-tactil-panel.png') });
+        await tctx.close();
+    }
+
     check('Sin errores de JavaScript en consola', errors.length === 0, errors);
 
     await browser.close();
