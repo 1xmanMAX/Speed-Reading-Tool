@@ -217,10 +217,15 @@
 
             <!-- Indicador grande de gestos (velocidad, tamaño, posición) -->
             <div class="gesture-osd" id="gesture-osd" aria-live="polite" hidden>
-                <div class="go-icon" id="go-icon"></div>
                 <div class="go-main"><strong id="go-value"></strong><span id="go-label"></span></div>
-                <div class="go-bar"><i id="go-fill"></i></div>
-                <p class="go-preview" id="go-preview"></p>
+            </div>
+            <!-- Regla de valores junto al dedo: los favoritos se marcan en rojo -->
+            <div class="go-ruler" id="go-ruler" aria-hidden="true" hidden><div class="go-ruler-track" id="go-ruler-track"></div></div>
+            <!-- Tira de texto que se desliza al avanzar/retroceder con el dedo -->
+            <div class="scrub-strip" id="scrub-strip" aria-hidden="true" hidden>
+                <div class="ss-info" id="ss-info"></div>
+                <div class="ss-viewport"><div class="ss-track" id="ss-track"></div></div>
+                <div class="ss-frame"></div>
             </div>
             <div class="tap-ripple" id="tap-ripple" aria-hidden="true"></div>
 
@@ -244,7 +249,8 @@
                 <label class="sheet-slider">
                     <span class="sheet-label">Velocidad</span>
                     <strong class="sheet-value" id="sheet-speed-val">300 ppm</strong>
-                    <input type="range" id="sheet-speed" min="60" max="1200" step="10">
+                    <div class="sheet-range"><input type="range" id="sheet-speed" min="60" max="1200" step="10"><div class="fav-ticks" id="ticks-speed"></div></div>
+                    <div class="fav-row"><button type="button" class="fav-toggle" data-fav="speed">☆ Marcar favorita</button><div class="fav-chips" id="chips-speed"></div></div>
                 </label>
                 <label class="sheet-slider" id="sheet-chunk-row">
                     <span class="sheet-label">Palabras por bloque</span>
@@ -254,7 +260,8 @@
                 <label class="sheet-slider">
                     <span class="sheet-label">Tamaño del texto</span>
                     <strong class="sheet-value" id="sheet-size-val">56 px</strong>
-                    <input type="range" id="sheet-size" min="14" max="120" step="1">
+                    <div class="sheet-range"><input type="range" id="sheet-size" min="14" max="120" step="1"><div class="fav-ticks" id="ticks-size"></div></div>
+                    <div class="fav-row"><button type="button" class="fav-toggle" data-fav="size">☆ Marcar favorito</button><div class="fav-chips" id="chips-size"></div></div>
                 </label>
                 <div class="sheet-actions">
                     <button class="sheet-act" id="sheet-voice"><svg><use href="#i-headphones"/></svg><span>Voz</span></button>

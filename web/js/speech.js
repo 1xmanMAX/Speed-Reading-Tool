@@ -203,7 +203,7 @@
       lang: v.lang || '',
       provider: 'system',
       microsoft: /Microsoft/i.test(name),
-      natural: /Natural|Online|Neural/i.test(name),
+      natural: /Natural|Online|Neural|Premium|Enhanced|Mejorad/i.test(name),
       local: !!v.localService
     };
   }
@@ -701,7 +701,8 @@
       nativeVoiceCache = ((r && r.voices) || []).map(function (v) {
         return {
           id: v.id, name: nativeVoiceName(v), lang: v.lang || '', provider: 'system',
-          microsoft: false, natural: (v.quality || 0) >= 400, local: !v.network
+          // En Android las voces en línea de Google y las de calidad «muy alta» son neuronales
+          microsoft: false, natural: !!v.network || (v.quality || 0) >= 500, local: !v.network
         };
       });
       return nativeVoiceCache;

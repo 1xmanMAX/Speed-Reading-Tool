@@ -295,6 +295,30 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the copy_uri command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-copy-uri",
+          "markdownDescription": "Enables the copy_uri command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the copy_uri command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-copy-uri",
+          "markdownDescription": "Denies the copy_uri command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the notify_pixpin command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-notify-pixpin",
+          "markdownDescription": "Enables the notify_pixpin command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the notify_pixpin command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-notify-pixpin",
+          "markdownDescription": "Denies the notify_pixpin command without any pre-configured scope."
+        },
+        {
           "description": "Enables the register_listener command without any pre-configured scope.",
           "type": "string",
           "const": "allow-register-listener",
@@ -343,6 +367,18 @@
           "markdownDescription": "Denies the stop command without any pre-configured scope."
         },
         {
+          "description": "Enables the vibrate command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-vibrate",
+          "markdownDescription": "Enables the vibrate command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the vibrate command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-vibrate",
+          "markdownDescription": "Denies the vibrate command without any pre-configured scope."
+        },
+        {
           "description": "Enables the voices command without any pre-configured scope.",
           "type": "string",
           "const": "allow-voices",
@@ -355,10 +391,10 @@
           "markdownDescription": "Denies the voices command without any pre-configured scope."
         },
         {
-          "description": "Permite leer en voz alta con el motor de voz del sistema.\n#### This default permission set includes:\n\n- `allow-speak`\n- `allow-stop`\n- `allow-voices`\n- `allow-register-listener`\n- `allow-remove-listener`",
+          "description": "Permite leer en voz alta con el motor de voz del sistema.\n#### This default permission set includes:\n\n- `allow-speak`\n- `allow-stop`\n- `allow-voices`\n- `allow-register-listener`\n- `allow-remove-listener`\n- `allow-vibrate`\n- `allow-copy-uri`\n- `allow-notify-pixpin`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Permite leer en voz alta con el motor de voz del sistema.\n#### This default permission set includes:\n\n- `allow-speak`\n- `allow-stop`\n- `allow-voices`\n- `allow-register-listener`\n- `allow-remove-listener`"
+          "markdownDescription": "Permite leer en voz alta con el motor de voz del sistema.\n#### This default permission set includes:\n\n- `allow-speak`\n- `allow-stop`\n- `allow-voices`\n- `allow-register-listener`\n- `allow-remove-listener`\n- `allow-vibrate`\n- `allow-copy-uri`\n- `allow-notify-pixpin`"
         }
       ]
     }

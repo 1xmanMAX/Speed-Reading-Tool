@@ -2,4 +2,4 @@
 
 [default]
 description = "Permite leer en voz alta con el motor de voz del sistema."
-permissions = ["allow-speak", "allow-stop", "allow-voices", "allow-register-listener", "allow-remove-listener"]
+permissions = ["allow-speak", "allow-stop", "allow-voices", "allow-register-listener", "allow-remove-listener", "allow-vibrate", "allow-copy-uri", "allow-notify-pixpin"]

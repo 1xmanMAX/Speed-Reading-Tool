@@ -1,7 +1,15 @@
 package com.lecturaveloz.tts
 
 import android.app.Activity
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import java.io.File
+import android.os.Build
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.webkit.WebView
@@ -13,6 +21,29 @@ import app.tauri.plugin.JSArray
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 import java.util.Locale
+
+@InvokeArg
+class CopyUriArgs {
+    lateinit var uri: String
+    var name: String? = null
+}
+
+@InvokeArg
+class PixpinArgs {
+    lateinit var doc: String
+    var tipo: String = "texto"
+    var pagina: Int = 0
+    var frac: Float = 0f
+    var fraccion: Float = 0f
+    var t: Long = 0
+    var palabra: Int = 0
+    var total: Int = 0
+}
+
+@InvokeArg
+class VibrateArgs {
+    var ms: Long = 18
+}
 
 @InvokeArg
 class SpeakArgs {
@@ -134,6 +165,81 @@ class TtsPlugin(private val activity: Activity) : Plugin(activity) {
             res.put("voices", list)
             res.put("engine", engine.defaultEngine ?: "")
             invoke.resolve(res)
+        }
+    }
+
+    @Command
+    fun vibrate(invoke: Invoke) {
+        val args = invoke.parseArgs(VibrateArgs::class.java)
+        val ms = args.ms.coerceIn(1L, 200L)
+        try {
+            val vibrator: Vibrator? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                (activity.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)?.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                activity.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            }
+            if (vibrator?.hasVibrator() == true) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    vibrator.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE))
+                } else {
+                    @Suppress("DEPRECATION")
+                    vibrator.vibrate(ms)
+                }
+            }
+        } catch (e: Exception) {
+            // Sin vibración disponible: no es un error para el usuario
+        }
+        invoke.resolve()
+    }
+
+    /**
+     * Copia a la caché un documento compartido por PixPin (content://, con permiso
+     * temporal de lectura) y devuelve su ruta para que la app lo importe.
+     */
+    @Command
+    fun copyUri(invoke: Invoke) {
+        val args = invoke.parseArgs(CopyUriArgs::class.java)
+        Thread {
+            try {
+                val uri = Uri.parse(args.uri)
+                if (uri.scheme != "content" && uri.scheme != "file") throw IllegalArgumentException("URI no válida")
+                val safe = (args.name ?: "documento").replace(Regex("[^\\p{L}\\p{N}._ -]"), "_").take(120).ifBlank { "documento" }
+                val dir = File(activity.cacheDir, "pixpin").apply { mkdirs() }
+                val out = File(dir, safe)
+                activity.contentResolver.openInputStream(uri).use { input ->
+                    if (input == null) throw IllegalStateException("No se pudo abrir el documento")
+                    out.outputStream().use { input.copyTo(it) }
+                }
+                val res = JSObject()
+                res.put("path", out.absolutePath)
+                invoke.resolve(res)
+            } catch (e: Exception) {
+                invoke.reject("No se pudo leer el documento de PixPin: ${e.message}")
+            }
+        }.start()
+    }
+
+    /** Devuelve a PixPin el punto de lectura para que mueva su marcador verde 🟢. */
+    @Command
+    fun notifyPixpin(invoke: Invoke) {
+        val a = invoke.parseArgs(PixpinArgs::class.java)
+        try {
+            val intent = Intent("com.forge.pixpin.LECTURA_VELOZ").apply {
+                setPackage("com.forge.pixpin")
+                putExtra("doc", a.doc)
+                putExtra("tipo", if (a.tipo == "pdf") "pdf" else "texto")
+                putExtra("pagina", a.pagina.coerceAtLeast(0))
+                putExtra("frac", a.frac.coerceIn(0f, 1f))
+                putExtra("fraccion", a.fraccion.coerceIn(0f, 1f))
+                putExtra("t", a.t)
+                putExtra("palabra", a.palabra)
+                putExtra("total", a.total)
+            }
+            activity.sendBroadcast(intent)
+            invoke.resolve()
+        } catch (e: Exception) {
+            invoke.reject("No se pudo avisar a PixPin: ${e.message}")
         }
     }
 }

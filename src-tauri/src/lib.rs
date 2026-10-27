@@ -47,6 +47,17 @@ enum QuickRead {
         #[serde(rename = "dataUrl")]
         data_url: String,
     },
+    /// Documento enviado por PixPin (`lecturaveloz://pixpin/abrir?...`).
+    Pixpin {
+        url: String,
+    },
+}
+
+/// Ficheros que PixPin ha pedido abrir: solo esos se pueden leer con
+/// `pixpin_read_file` (además de la caché propia en Android).
+#[derive(Default)]
+struct PixpinState {
+    allowed: Mutex<std::collections::HashSet<std::path::PathBuf>>,
 }
 
 /// Clipboard content as read from the system.
@@ -163,7 +174,106 @@ fn deliver<R: Runtime>(app: &AppHandle<R>, clip: Clip) {
     let _ = match item {
         QuickRead::Text { text } => app.emit("quick-read", text),
         QuickRead::Image { data_url } => app.emit("quick-read-image", data_url),
+        QuickRead::Pixpin { url } => app.emit("pixpin-open", url),
     };
+}
+
+/// PixPin pide abrir un documento en una posición: se autoriza la lectura de ese
+/// fichero (escritorio) y se entrega el enlace completo a la interfaz.
+fn deliver_pixpin<R: Runtime>(app: &AppHandle<R>, url: &Url) {
+    if let Some((_, ruta)) = url.query_pairs().find(|(k, _)| k == "ruta") {
+        let path = std::path::PathBuf::from(ruta.as_ref());
+        if let Ok(canon) = path.canonicalize() {
+            if canon.is_file() {
+                app.state::<PixpinState>().allowed.lock().unwrap().insert(canon);
+            }
+        }
+    }
+    let state = app.state::<QuickState>();
+    let item = QuickRead::Pixpin { url: url.to_string() };
+    focus_main(app);
+    if !state.ready.load(Ordering::SeqCst) {
+        *state.pending.lock().unwrap() = Some(item.clone());
+    }
+    let _ = app.emit("pixpin-open", url.to_string());
+}
+
+const MAX_PIXPIN_FILE: u64 = 300 * 1024 * 1024;
+
+/// Lee un documento enviado por PixPin. Solo se permiten los ficheros autorizados
+/// por un enlace `lecturaveloz://pixpin/abrir` y la caché de la app (Android copia
+/// ahí el documento compartido).
+#[tauri::command]
+fn pixpin_read_file<R: Runtime>(
+    app: AppHandle<R>,
+    state: tauri::State<'_, PixpinState>,
+    path: String,
+) -> Result<tauri::ipc::Response, String> {
+    let canon = std::path::PathBuf::from(&path)
+        .canonicalize()
+        .map_err(|_| "No se encontró el documento de PixPin.".to_string())?;
+    let in_cache = app
+        .path()
+        .app_cache_dir()
+        .ok()
+        .and_then(|d| d.canonicalize().ok())
+        .is_some_and(|d| canon.starts_with(d));
+    let allowed = in_cache || state.allowed.lock().unwrap().contains(&canon);
+    if !allowed {
+        return Err("Este documento no fue enviado por PixPin.".into());
+    }
+    let meta = std::fs::metadata(&canon).map_err(|e| e.to_string())?;
+    if !meta.is_file() || meta.len() > MAX_PIXPIN_FILE {
+        return Err("El documento es demasiado grande o no es un archivo.".into());
+    }
+    let bytes = std::fs::read(&canon).map_err(|e| e.to_string())?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+/// Progreso de lectura que se devuelve a PixPin (mueve su marcador verde 🟢).
+#[derive(serde::Deserialize)]
+#[allow(dead_code)] // en móvil la sincronización va por el plugin nativo
+struct PixpinProgress {
+    doc: String,
+    ruta: Option<String>,
+    tipo: String,
+    pagina: u32,
+    frac: f64,
+    fraccion: f64,
+    t: u64,
+}
+
+/// Escritorio: abre `pixpinmax://lectura-veloz?...` para que PixPin actualice su
+/// marcador en segundo plano (sin pasar al frente).
+#[tauri::command]
+fn pixpin_sync<R: Runtime>(app: AppHandle<R>, progress: PixpinProgress) -> Result<(), String> {
+    #[cfg(desktop)]
+    {
+        use tauri_plugin_opener::OpenerExt;
+        let clamp = |v: f64| if v.is_finite() { v.clamp(0.0, 1.0) } else { 0.0 };
+        let mut url = Url::parse("pixpinmax://lectura-veloz").map_err(|e| e.to_string())?;
+        {
+            let mut q = url.query_pairs_mut();
+            q.append_pair("v", "1")
+                .append_pair("doc", &progress.doc)
+                .append_pair("tipo", if progress.tipo == "pdf" { "pdf" } else { "texto" })
+                .append_pair("pagina", &progress.pagina.to_string())
+                .append_pair("frac", &format!("{:.4}", clamp(progress.frac)))
+                .append_pair("fraccion", &format!("{:.4}", clamp(progress.fraccion)))
+                .append_pair("t", &progress.t.to_string());
+            if let Some(ruta) = progress.ruta.as_deref() {
+                q.append_pair("ruta", ruta);
+            }
+        }
+        app.opener()
+            .open_url(url.as_str(), None::<&str>)
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(mobile)]
+    {
+        let _ = (app, progress);
+        Err("En el móvil la sincronización usa el plugin nativo.".into())
+    }
 }
 
 /// Immediate quick read (global shortcut): whatever is in the clipboard now.
@@ -228,6 +338,8 @@ fn handle_urls<R: Runtime>(app: &AppHandle<R>, urls: Vec<Url>) {
         // `lecturaveloz://clipboard`, `lecturaveloz://read`, `lecturaveloz:` …
         match url.host_str().unwrap_or("") {
             "" | "clipboard" | "read" => quick_read_waiting(app),
+            // `lecturaveloz://pixpin/abrir?...` → documento enviado por PixPin
+            "pixpin" => deliver_pixpin(app, &url),
             // `lecturaveloz://control/<orden>` → controla el lector sin robar el foco
             // (pensado para scripts de PixPin, AutoHotkey, accesos directos…).
             "control" => {
@@ -509,6 +621,7 @@ pub fn run() {
     builder = builder
         .manage(QuickState::default())
         .manage(MiniState::default())
+        .manage(PixpinState::default())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
@@ -586,7 +699,9 @@ pub fn run() {
             read_clipboard,
             quick_read_ready,
             set_mini_mode,
-            mini_resize
+            mini_resize,
+            pixpin_read_file,
+            pixpin_sync
         ])
         .run(tauri::generate_context!())
         .expect("error al iniciar Lectura Veloz");

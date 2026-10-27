@@ -461,6 +461,50 @@ async function openSample(page) {
         await tctx.close();
     }
 
+    /* ---------------- Integración con PixPin (simulada) ---------------- */
+    console.log('\nIntegración con PixPin');
+    {
+        const pctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+        const pp = await pctx.newPage();
+        pp.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+        const pdf = fs.readFileSync(path.join(FIX, 'con-imagen.pdf')).toString('base64');
+        await pp.addInitScript((pdf) => {
+            window.__calls = [];
+            window.__ev = {};
+            const bytes = Uint8Array.from(atob(pdf), (c) => c.charCodeAt(0));
+            window.__TAURI__ = {
+                core: { invoke: async (c, a) => { window.__calls.push([c, JSON.parse(JSON.stringify(a || {}))]); return c === 'pixpin_read_file' ? bytes.buffer.slice(0) : null; } },
+                event: { listen: async (n, f) => { window.__ev[n] = f; return () => {}; } },
+            };
+        }, pdf);
+        await pp.goto(`http://localhost:${PORT}/`);
+        await pp.waitForFunction(() => window.__ev && window.__ev['pixpin-open']);
+        const link = (t) => 'lecturaveloz://pixpin/abrir?v=1&doc=abc123&ruta=' + encodeURIComponent('C:\\Docs\\Informe.pdf') + '&nombre=Informe.pdf&tipo=pdf&pagina=1&frac=0.5&fraccion=0.5&paginas=3&t=' + t;
+        await pp.evaluate((u) => window.__ev['pixpin-open']({ payload: u }), link(Date.now()));
+        await pp.waitForFunction(() => LV.app.state.book && LV.app.state.book.source === 'PixPin', null, { timeout: 30000 });
+        await pp.waitForTimeout(500);
+        const o = await pp.evaluate(() => ({ pos: LV.app.state.pos, n: LV.app.state.tok.words.length, tags: LV.app.state.book.tags, reader: !document.querySelector('#view-reader').hidden }));
+        check('PixPin: abre el documento directamente en el lector', o.reader, o);
+        check('PixPin: continúa desde el marcador verde (página 2)', o.pos > 20 && o.pos < 49, o.pos);
+        check('PixPin: el libro queda etiquetado «PixPin»', (o.tags || []).includes('PixPin'), o.tags);
+        await pp.evaluate(() => { LV.app.setSetting('wpm', 600); LV.app.play(); });
+        await pp.waitForTimeout(1200);
+        await pp.evaluate(() => LV.app.pause());
+        await pp.waitForTimeout(300);
+        const sync = await pp.evaluate(() => window.__calls.filter((c) => c[0] === 'pixpin_sync').map((c) => c[1].progress));
+        const lastSync = sync[sync.length - 1] || {};
+        check('PixPin: devuelve el progreso (página y posición) al pausar', lastSync.doc === 'abc123' && lastSync.tipo === 'pdf' && typeof lastSync.pagina === 'number', lastSync);
+        const lvPos = await pp.evaluate(() => LV.app.state.pos);
+        await pp.evaluate((u) => window.__ev['pixpin-open']({ payload: u }), link(1000));
+        await pp.waitForTimeout(800);
+        check('PixPin: si el marcador de PixPin es más antiguo, gana Lectura Veloz', (await pp.evaluate(() => LV.app.state.pos)) === lvPos);
+        check('PixPin: no duplica el libro al reabrirlo', (await pp.evaluate(async () => (await LV.storage.books.all()).length)) === 1);
+        await pp.click('#reader-back');
+        await pp.waitForTimeout(400);
+        await pp.screenshot({ path: path.join(OUT, '50-pixpin-biblioteca.png') });
+        await pctx.close();
+    }
+
     check('Sin errores de JavaScript en consola', errors.length === 0, errors);
 
     await browser.close();

@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Vibración breve al pasar por un tamaño o velocidad favoritos -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Android 11+: hace visibles los motores de voz instalados -->
     <queries>
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
+        <!-- PixPin Pro: devolverle el progreso de lectura (marcador verde) -->
+        <package android:name="com.forge.pixpin" />
     </queries>
 </manifest>

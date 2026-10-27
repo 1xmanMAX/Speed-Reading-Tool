@@ -17,6 +17,7 @@ window.LV = window.LV || {};
     let dbPromise = null;
     const memory = new Map(); // respaldo si IndexedDB no está disponible
     const memoryAssets = new Map();
+    const patchQueue = new Map(); // id → última actualización pendiente
 
     function openDb() {
         if (dbPromise) return dbPromise;
@@ -97,12 +98,21 @@ window.LV = window.LV || {};
             if (db) await tx(db, 'readwrite', (s) => s.put(rec), ASSETS);
             else memoryAssets.set(id, rec);
         },
-        /** Actualiza solo la posición sin reescribir el libro completo en memoria del llamador */
-        async patch(id, fields) {
-            const book = await books.get(id);
-            if (!book) return null;
-            Object.assign(book, fields);
-            return books.put(book);
+        /**
+         * Actualiza algunos campos del libro. Las actualizaciones del mismo libro se
+         * encadenan para que dos guardados simultáneos no se pisen (leer → escribir).
+         */
+        patch(id, fields) {
+            const prev = patchQueue.get(id) || Promise.resolve();
+            const next = prev.catch(() => {}).then(async () => {
+                const book = await books.get(id);
+                if (!book) return null;
+                Object.assign(book, fields);
+                return books.put(book);
+            });
+            patchQueue.set(id, next);
+            next.finally(() => { if (patchQueue.get(id) === next) patchQueue.delete(id); }).catch(() => {});
+            return next;
         },
         async create({ title, text, source, images, original, pageOffsets, cover }) {
             const now = Date.now();

@@ -58,6 +58,7 @@
         immersive: true,
         showImages: true,
         imagePause: 2,
+        favs: { wpm: [], voiceRate: [], rsvpSize: [], pageSize: [] },
         miniView: 'auto',
         miniScale: 1,
     };
@@ -707,7 +708,10 @@
         let voices = [];
         try { voices = await LV.speech.listVoices(); } catch (e) { voices = []; }
         const wanted = settings.voiceProvider === 'azure' ? 'azure' : 'system';
-        const list = voices.filter((v) => v.provider === wanted);
+        const all = voices.filter((v) => v.provider === wanted);
+        // Solo las mejores voces: neuronales / con IA (Microsoft «Natural», Azure, Google en línea…)
+        const best = all.filter((v) => v.natural || v.provider === 'azure');
+        const list = best.length ? best : all;
         if (!list.length) {
             sel.innerHTML = `<option value="">${wanted === 'azure' ? 'Añade tu clave de Azure para ver las voces' : 'No hay voces disponibles en este navegador'}</option>`;
             return;
@@ -726,10 +730,9 @@
             configureSpeech();
         }
         sel.value = settings.voiceId;
-        const hasNatural = voices.some((v) => v.natural && v.microsoft);
-        $('#voice-hint').textContent = hasNatural
-            ? '✦ Voces neuronales de Microsoft disponibles: suenan muy naturales.'
-            : 'Consejo: en Microsoft Edge aparecen las voces «Online (Natural)» de Microsoft. En la app de Windows tienes Helena, Laura, Pablo… o usa Azure para voces neuronales.';
+        $('#voice-hint').textContent = best.length
+            ? `✦ Solo se muestran las ${best.length} voces neuronales (con IA) de mejor calidad.`
+            : 'Este dispositivo no tiene voces neuronales: se muestran las disponibles. Para voces con IA usa Microsoft Edge (voces «Natural»), activa Azure o, en Android, instala «Speech Services by Google».';
     }
 
     let speechHandle = null;
@@ -866,11 +869,14 @@
     function saveProgress(now, finished) {
         if (!state.book) return;
         clearTimeout(state.saveTimer);
+        const moved = state.book.index !== state.pos;
         state.book.index = state.pos;
         state.book.lastOpened = Date.now();
+        if (moved) state.book.progressAt = Date.now();
         if (finished) state.book.finished = true;
-        const fields = { index: state.pos, lastOpened: state.book.lastOpened, finished: !!state.book.finished, mode: settings.mode };
+        const fields = { index: state.pos, lastOpened: state.book.lastOpened, progressAt: state.book.progressAt || 0, finished: !!state.book.finished, mode: settings.mode };
         S.books.patch(state.book.id, fields).catch(() => {});
+        if (state.book.pixpin && (moved || now)) syncPixpin(!!now);
     }
 
     /* =====================================================
@@ -1532,30 +1538,133 @@
 
     function speedInfo() {
         return voiceActive()
-            ? { key: 'voiceRate', val: Number(settings.voiceRate), min: 0.5, max: 3, step: 0.05, fmt: (v) => v.toFixed(2).replace(/0$/, '') + '×', label: 'velocidad de la voz' }
+            ? { key: 'voiceRate', val: Number(settings.voiceRate), min: 0.5, max: 3, step: 0.05, fmt: (v) => Number(v).toFixed(2).replace(/0$/, '') + '×', label: 'velocidad de la voz' }
             : { key: 'wpm', val: settings.wpm, min: 60, max: 1500, step: 10, fmt: (v) => String(Math.round(v)), label: 'palabras por minuto' };
     }
 
     function sizeInfo() {
         return mode().kind === 'rsvp' || mode().kind === 'peri'
-            ? { key: 'rsvpSize', val: settings.rsvpSize, min: 28, max: 120, step: 2 }
-            : { key: 'pageSize', val: settings.pageSize, min: 14, max: 32, step: 1 };
+            ? { key: 'rsvpSize', val: settings.rsvpSize, min: 28, max: 120, step: 2, fmt: (v) => String(v), label: 'tamaño del texto · px' }
+            : { key: 'pageSize', val: settings.pageSize, min: 14, max: 32, step: 1, fmt: (v) => String(v), label: 'tamaño del texto · px' };
     }
 
-    function showOsd(icon, value, label, frac, preview) {
+    /* --- Favoritos (tamaños y velocidades preferidos) --- */
+    const sameVal = (a, b) => Math.abs(Number(a) - Number(b)) < 1e-6;
+
+    function favList(key) {
+        const f = settings.favs && settings.favs[key];
+        return Array.isArray(f) ? f : [];
+    }
+
+    function isFav(key, v) {
+        return favList(key).some((x) => sameVal(x, v));
+    }
+
+    function toggleFav(key, v) {
+        const favs = Object.assign({}, settings.favs || {});
+        const list = favList(key).filter((x) => !sameVal(x, v));
+        if (list.length === favList(key).length) list.push(Math.round(Number(v) * 100) / 100);
+        favs[key] = list.sort((a, b) => a - b);
+        setSetting('favs', favs);
+        haptic(25);
+    }
+
+    /** Vibración corta (motor nativo en la app de Android; Vibration API en el navegador) */
+    function haptic(ms = 18) {
+        try {
+            if (IS_MOBILE_APP && window.__TAURI__.core) {
+                window.__TAURI__.core.invoke('plugin:lv-tts|vibrate', { ms }).catch(() => {});
+                return;
+            }
+            if (navigator.vibrate) navigator.vibrate(ms);
+        } catch (e) { /* sin vibración */ }
+    }
+
+    /* --- Indicador de texto (sin recuadro) --- */
+    function showOsd(value, label, fav) {
         const o = $('#gesture-osd');
-        $('#go-icon').textContent = icon;
         $('#go-value').textContent = value;
         $('#go-label').textContent = label;
-        $('#go-fill').style.width = clamp(frac, 0, 1) * 100 + '%';
-        $('#go-preview').textContent = preview || '';
+        o.classList.toggle('is-fav', !!fav);
         o.hidden = false;
+        clearTimeout(osdHide);
     }
 
     let osdHide = 0;
     function hideOsd(delay = 500) {
         clearTimeout(osdHide);
-        osdHide = setTimeout(() => { $('#gesture-osd').hidden = true; }, delay);
+        osdHide = setTimeout(() => {
+            $('#gesture-osd').hidden = true;
+            $('#go-ruler').hidden = true;
+        }, delay);
+    }
+
+    /* Regla vertical de valores junto al dedo */
+    const TICK_H = 30;
+    function buildRuler(info, side) {
+        const vals = [];
+        for (let v = info.min; v <= info.max + 1e-9; v += info.step) vals.push(Math.round(v * 100) / 100);
+        const track = $('#go-ruler-track');
+        track.innerHTML = vals.map((v) => `<div class="go-tick${isFav(info.key, v) ? ' is-fav' : ''}" data-v="${v}">${info.fmt(v)}</div>`).join('');
+        const ruler = $('#go-ruler');
+        ruler.classList.toggle('on-left', side === 'left');
+        ruler.classList.toggle('on-right', side !== 'left');
+        ruler.hidden = false;
+        return vals;
+    }
+
+    function moveRuler(vals, v) {
+        let idx = 0;
+        for (let i = 0; i < vals.length; i++) if (Math.abs(vals[i] - v) < Math.abs(vals[idx] - v)) idx = i;
+        const track = $('#go-ruler-track');
+        track.style.transform = `translateY(${-(idx + 0.5) * TICK_H}px)`;
+        const prev = $('.go-tick.is-cur', track);
+        if (prev) prev.classList.remove('is-cur');
+        if (track.children[idx]) track.children[idx].classList.add('is-cur');
+    }
+
+    /* Tira de texto que se desliza con el dedo */
+    const STRIP_SPAN = 60;
+    let strip = { start: -1, end: -1 };
+
+    function renderStrip(target) {
+        const words = state.tok.words;
+        const track = $('#ss-track');
+        if (target < strip.start + 10 || target > strip.end - 10 || strip.start < 0) {
+            strip.start = Math.max(0, target - STRIP_SPAN);
+            strip.end = Math.min(n(), target + STRIP_SPAN);
+            track.style.transition = 'none';
+            track.innerHTML = words.slice(strip.start, strip.end).map((w, k) => `<span data-i="${strip.start + k}">${esc(w)}</span>`).join('');
+            void track.offsetWidth;
+            track.style.transition = '';
+        }
+        $$('span.on', track).forEach((s) => s.classList.remove('on'));
+        const spans = track.children;
+        for (let k = 0; k < spans.length; k++) spans[k].classList.toggle('past', strip.start + k < target);
+        const cur = spans[target - strip.start];
+        if (!cur) return;
+        cur.classList.add('on');
+        const vw = $('#scrub-strip').clientWidth || el.reader.clientWidth;
+        track.style.transform = `translateX(${vw / 2 - (cur.offsetLeft + cur.offsetWidth / 2)}px)`;
+        const frame = $('.ss-frame');
+        frame.style.width = Math.max(64, cur.offsetWidth + 22) + 'px';
+    }
+
+    function showStrip(target, diff) {
+        const box = $('#scrub-strip');
+        if (box.hidden) {
+            strip = { start: -1, end: -1 };
+            box.hidden = false;
+            el.reader.classList.add('is-scrubbing');
+        }
+        renderStrip(target);
+        const pct = Math.round((target / Math.max(1, n() - 1)) * 100);
+        $('#ss-info').innerHTML = `<strong>${diff >= 0 ? '+' : '−'}${fmtNum(Math.abs(diff))}</strong>palabras · ${pct}%`;
+    }
+
+    function hideStrip() {
+        $('#scrub-strip').hidden = true;
+        el.reader.classList.remove('is-scrubbing');
     }
 
     function ripple(x, y, text) {
@@ -1587,7 +1696,7 @@
             if (e.target.closest('button, a, input, .fig, .pv-root')) return;
             g = { id: e.pointerId, x0: e.clientX, y0: e.clientY, t0: performance.now(), zone: forced || zoneOf(e.clientX), forced: !!forced, axis: null, el: e.currentTarget };
             g.longTimer = setTimeout(() => {
-                if (g && !g.axis) { g.long = true; openSheet(); }
+                if (g && !g.axis) { g.long = true; haptic(15); openSheet(); }
             }, 500);
             if (forced || isFullGesture()) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) { /* sin captura */ } }
         };
@@ -1605,35 +1714,44 @@
                     g.axis = 'v';
                     g.kind = g.zone === 'left' ? 'size' : 'speed';
                     g.info = g.kind === 'size' ? sizeInfo() : speedInfo();
+                    g.vals = buildRuler(g.info, g.kind === 'size' ? 'left' : 'right');
+                    el.reader.classList.add('is-adjusting');
+                    g.last = g.info.val;
                 } else {
                     g.axis = 'h';
                     g.startPos = state.pos;
+                    g.wasPlaying = state.playing;
+                    if (state.playing) pause(false);
                 }
                 try { g.el.setPointerCapture(g.id); } catch (err) { /* sin captura */ }
             }
             if (g.axis === 'v') {
                 const info = g.info;
                 const px = g.kind === 'size' ? 14 : 12; // píxeles por paso (sensibilidad)
-                const steps = Math.round(-dy / px);
-                const v = clamp(info.val + steps * info.step, info.min, info.max);
-                g.value = Math.round(v * 100) / 100;
-                const frac = (g.value - info.min) / (info.max - info.min);
-                if (g.kind === 'speed') {
-                    showOsd('⚡', info.fmt(g.value), info.label, frac);
-                    // La velocidad de lectura se aplica en vivo; la de la voz al soltar
-                    if (info.key === 'wpm' && g.value !== settings.wpm) setSetting('wpm', g.value);
-                } else {
-                    showOsd('Aa', `${g.value} px`, 'tamaño del texto', frac);
-                    if (g.value !== settings[info.key]) setSetting(info.key, g.value);
+                let v = clamp(info.val + Math.round(-dy / px) * info.step, info.min, info.max);
+                v = Math.round(v * 100) / 100;
+                // Imán suave: los favoritos «atrapan» el valor cuando pasas cerca
+                const near = favList(info.key).find((f) => Math.abs(f - v) <= info.step + 1e-9);
+                if (near !== undefined && Math.abs(-dy / px - (near - info.val) / info.step) < 0.8) v = near;
+                g.value = v;
+                const fav = isFav(info.key, v);
+                if (!sameVal(v, g.last)) {
+                    if (fav) haptic(22);
+                    g.last = v;
                 }
+                moveRuler(g.vals, v);
+                showOsd(info.fmt(v), (fav ? '★ ' : '') + info.label, fav);
+                // La velocidad de lectura y el tamaño se aplican en vivo; la de la voz al soltar
+                if (info.key !== 'voiceRate' && !sameVal(v, settings[info.key])) setSetting(info.key, v);
             } else if (g.axis === 'h') {
                 const w = el.reader.clientWidth || 400;
                 const perPx = clamp(n() / (w * 3), 0.12, 60);
                 const target = clamp(Math.round(g.startPos + dx * perPx), 0, n() - 1);
-                g.target = target;
-                const diff = target - g.startPos;
-                const words = state.tok.words.slice(target, target + 6).join(' ');
-                showOsd(diff >= 0 ? '⏩' : '⏪', (diff >= 0 ? '+' : '−') + fmtNum(Math.abs(diff)), `palabras · ${Math.round((target / Math.max(1, n() - 1)) * 100)}%`, target / Math.max(1, n() - 1), words + '…');
+                if (target !== g.target) {
+                    if (g.target !== undefined && T.F_SENTENCE & state.tok.flags[target - 1]) haptic(6);
+                    g.target = target;
+                    showStrip(target, target - g.startPos);
+                }
             }
         };
 
@@ -1644,13 +1762,15 @@
             clearTimeout(cur.longTimer);
             if (cur.long) return;
             if (cur.axis === 'v') {
-                if (cur.kind === 'speed' && cur.info.key === 'voiceRate') setSetting('voiceRate', cur.value);
-                hideOsd(700);
+                el.reader.classList.remove('is-adjusting');
+                if (cur.info.key === 'voiceRate' && cur.value !== undefined) setSetting('voiceRate', cur.value);
+                hideOsd(650);
                 return;
             }
             if (cur.axis === 'h') {
-                hideOsd(400);
+                hideStrip();
                 if (cur.target !== undefined && cur.target !== cur.startPos) seek(cur.target);
+                if (cur.wasPlaying) play();
                 return;
             }
             if (cur.axis === 'none' || performance.now() - cur.t0 > 400) return;
@@ -1667,6 +1787,7 @@
                 lastTap = null;
                 stepSentence(cur.zone === 'left' ? -1 : 1);
                 ripple(e.clientX, e.clientY, cur.zone === 'left' ? '« frase' : 'frase »');
+                haptic(10);
                 return;
             }
             lastTap = { zone: cur.zone, t: now };
@@ -1681,7 +1802,13 @@
         };
 
         const cancel = (e) => {
-            if (g && e.pointerId === g.id) { clearTimeout(g.longTimer); g = null; hideOsd(200); }
+            if (g && e.pointerId === g.id) {
+                clearTimeout(g.longTimer);
+                if (g.axis === 'h') { hideStrip(); if (g.wasPlaying) play(); }
+                el.reader.classList.remove('is-adjusting');
+                g = null;
+                hideOsd(200);
+            }
         };
 
         el.stage.addEventListener('pointerdown', (e) => down(e, null));
@@ -1696,7 +1823,7 @@
             e.preventDefault();
             if (g && g.axis) return;
             if (g) { clearTimeout(g.longTimer); g = null; }
-            if ($('#quick-sheet').hidden) openSheet();
+            if ($('#quick-sheet').hidden) { haptic(15); openSheet(); }
         }));
 
         $('#speed-badge').addEventListener('click', openSheet);
@@ -1715,6 +1842,22 @@
     }
 
     /* --- Panel rápido --- */
+    function syncFavUI(kind) {
+        const info = kind === 'speed' ? speedInfo() : sizeInfo();
+        const input = $(kind === 'speed' ? '#sheet-speed' : '#sheet-size');
+        const min = Number(input.min), max = Number(input.max);
+        const cur = Number(input.value);
+        $('#ticks-' + kind).innerHTML = favList(info.key)
+            .filter((v) => v >= min && v <= max)
+            .map((v) => `<i style="left:${((v - min) / (max - min)) * 100}%"></i>`).join('');
+        $('#chips-' + kind).innerHTML = favList(info.key)
+            .map((v) => `<button type="button" class="fav-chip${sameVal(v, cur) ? ' is-cur' : ''}" data-kind="${kind}" data-v="${v}">${info.fmt(v)}</button>`).join('');
+        const btn = $(`.fav-toggle[data-fav="${kind}"]`);
+        const on = isFav(info.key, cur);
+        btn.classList.toggle('is-on', on);
+        btn.textContent = on ? '★ Favorito' : (kind === 'speed' ? '☆ Marcar favorita' : '☆ Marcar favorito');
+    }
+
     function syncSheet() {
         const sp = speedInfo();
         const speed = $('#sheet-speed');
@@ -1734,6 +1877,8 @@
         size.value = sz.val;
         $('#sheet-size-val').textContent = `${sz.val} px`;
         $$('#quick-sheet input[type="range"]').forEach(paintRange);
+        syncFavUI('speed');
+        syncFavUI('size');
         $('#sheet-voice').classList.toggle('is-on', voiceActive());
         $('#sheet-original').disabled = !(state.book && state.book.hasOriginal);
         $$('.sheet-mode').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === settings.mode)));
@@ -1745,9 +1890,13 @@
         if (!state.tok) return;
         $('#sheet-modes').innerHTML = MODES.map((m) => `<button class="sheet-mode" data-mode="${m.id}" aria-pressed="false">${m.name}</button>`).join('');
         syncSheet();
-        $('#quick-sheet').hidden = false;
+        const sheet = $('#quick-sheet');
+        sheet.hidden = false;
         $('#sheet-scrim').hidden = false;
         sheetOpenedAt = performance.now();
+        // El dedo que lo abrió sigue en la pantalla: que al levantarlo no toque nada del panel
+        sheet.style.pointerEvents = 'none';
+        setTimeout(() => { sheet.style.pointerEvents = ''; }, 500);
         hud.show(true);
     }
 
@@ -1766,13 +1915,16 @@
             setMode(b.dataset.mode);
             syncSheet();
         });
+        let lastSpeed = null;
         $('#sheet-speed').addEventListener('input', (e) => {
             const sp = speedInfo();
             const v = Number(e.target.value);
             if (sp.key === 'wpm') setSetting('wpm', v);
-            else $('#sheet-speed-val').textContent = sp.fmt(v);
+            $('#sheet-speed-val').textContent = sp.key === 'wpm' ? `${v} ppm` : sp.fmt(v);
+            if (isFav(sp.key, v) && !sameVal(v, lastSpeed)) haptic(22);
+            lastSpeed = v;
             paintRange(e.target);
-            if (sp.key === 'wpm') $('#sheet-speed-val').textContent = `${v} ppm`;
+            syncFavUI('speed');
         });
         $('#sheet-speed').addEventListener('change', (e) => {
             if (speedInfo().key === 'voiceRate') setSetting('voiceRate', Number(e.target.value));
@@ -1782,10 +1934,36 @@
             $('#sheet-chunk-val').textContent = settings.chunkSize;
             paintRange(e.target);
         });
+        let lastSize = null;
         $('#sheet-size').addEventListener('input', (e) => {
-            setSetting(sizeInfo().key, Number(e.target.value));
-            $('#sheet-size-val').textContent = `${e.target.value} px`;
+            const info = sizeInfo();
+            const v = Number(e.target.value);
+            setSetting(info.key, v);
+            $('#sheet-size-val').textContent = `${v} px`;
+            if (isFav(info.key, v) && !sameVal(v, lastSize)) haptic(22);
+            lastSize = v;
             paintRange(e.target);
+            syncFavUI('size');
+        });
+        // Marcar / desmarcar favorito y aplicar un favorito con un toque
+        $('#quick-sheet').addEventListener('click', (e) => {
+            const t = e.target.closest('.fav-toggle');
+            if (t) {
+                e.preventDefault();
+                const kind = t.dataset.fav;
+                const info = kind === 'speed' ? speedInfo() : sizeInfo();
+                toggleFav(info.key, Number($(kind === 'speed' ? '#sheet-speed' : '#sheet-size').value));
+                syncSheet();
+                return;
+            }
+            const c = e.target.closest('.fav-chip');
+            if (c) {
+                e.preventDefault();
+                const info = c.dataset.kind === 'speed' ? speedInfo() : sizeInfo();
+                setSetting(info.key, Number(c.dataset.v));
+                haptic(15);
+                syncSheet();
+            }
         });
         $('#sheet-voice').addEventListener('click', () => { toggleVoice(); syncSheet(); });
         $('#sheet-original').addEventListener('click', () => { closeSheet(); openOriginal(); });
@@ -2336,7 +2514,7 @@
                     </div>
                 </div>
                 <div class="bar"><i style="width:${pct}%"></i></div>
-                <div class="book-meta">${pct}% leído${b.source ? ' · ' + esc(b.source) : ''}</div>
+                <div class="book-meta">${pct}% leído${b.pixpin || (b.tags || []).includes('PixPin') ? ' <span class="tag-chip">PixPin 🟢</span>' : b.source ? ' · ' + esc(b.source) : ''}</div>
                 <div class="book-actions">
                     <button class="book-act" data-float="${b.id}" title="Leer en ventana flotante"><svg><use href="#i-pip"/></svg></button>
                     ${opts.noDelete ? '' : `<button class="book-act book-act-del" data-delete="${b.id}" title="Eliminar"><svg><use href="#i-trash"/></svg></button>`}
@@ -2654,6 +2832,151 @@
         }
     }
 
+    /* =====================================================
+       Integración con PixPin Pro (Android y Windows)
+       PixPin abre `lecturaveloz://pixpin/abrir?...` con el documento y la posición de
+       su marcador verde 🟢; Lectura Veloz continúa desde ahí y le devuelve el progreso.
+       Gana siempre la posición más reciente (campo `t` frente a `progressAt`).
+       ===================================================== */
+    function pixpinParams(urlStr) {
+        let u;
+        try { u = new URL(urlStr); } catch (e) { return null; }
+        const q = u.searchParams;
+        const num = (k) => { const v = Number(q.get(k)); return Number.isFinite(v) ? v : 0; };
+        const doc = (q.get('doc') || '').trim();
+        if (!doc) return null;
+        return {
+            doc,
+            nombre: (q.get('nombre') || 'Documento de PixPin').slice(0, 200),
+            ruta: q.get('ruta') || '',
+            uri: q.get('uri') || '',
+            tipo: q.get('tipo') === 'pdf' ? 'pdf' : 'texto',
+            pagina: Math.max(0, Math.floor(num('pagina'))),
+            frac: clamp(num('frac'), 0, 1),
+            fraccion: clamp(num('fraccion'), 0, 1),
+            paginas: Math.max(0, Math.floor(num('paginas'))),
+            t: Math.max(0, num('t')),
+        };
+    }
+
+    async function pixpinBytes(p) {
+        const core = window.__TAURI__.core;
+        let path = p.ruta;
+        if (!path && p.uri) path = (await core.invoke('plugin:lv-tts|copyUri', { uri: p.uri, name: p.nombre })).path;
+        if (!path) throw new Error('PixPin no envió el documento.');
+        return new Uint8Array(await core.invoke('pixpin_read_file', { path }));
+    }
+
+    /** Palabra correspondiente a la posición de PixPin (página + fracción, o fracción del documento) */
+    function wordForPixpin(book, p) {
+        const total = n();
+        if (p.tipo === 'pdf' && Array.isArray(book.pageOffsets) && book.pageOffsets.length) {
+            const starts = pageWordStarts();
+            if (starts && p.pagina < starts.length) {
+                const a = starts[p.pagina];
+                const b = p.pagina + 1 < starts.length ? starts[p.pagina + 1] : total;
+                return clamp(Math.round(a + (b - a) * p.frac), 0, total - 1);
+            }
+        }
+        const f = p.fraccion || (p.paginas ? (p.pagina + p.frac) / p.paginas : 0);
+        return clamp(Math.round(f * (total - 1)), 0, total - 1);
+    }
+
+    /** Posición actual expresada como la entiende PixPin */
+    function pixpinPosition(book, pos) {
+        const total = n();
+        const fraccion = total > 1 ? pos / (total - 1) : 0;
+        let pagina = 0;
+        let frac = 0;
+        const starts = book.pixpin.tipo === 'pdf' ? pageWordStarts() : null;
+        if (starts && starts.length) {
+            pagina = lowerBound(starts, pos);
+            const a = starts[pagina];
+            const b = pagina + 1 < starts.length ? starts[pagina + 1] : total;
+            frac = b > a ? clamp((pos - a) / (b - a), 0, 1) : 0;
+        } else if (book.pixpin.tipo === 'pdf' && book.pixpin.paginas) {
+            const x = fraccion * book.pixpin.paginas;
+            pagina = Math.min(book.pixpin.paginas - 1, Math.floor(x));
+            frac = clamp(x - pagina, 0, 1);
+        }
+        return { pagina, frac, fraccion };
+    }
+
+    let pixpinTimer = 0;
+    let pixpinLastSent = 0;
+    function syncPixpin(force) {
+        const b = state.book;
+        if (!b || !b.pixpin || !window.__TAURI__ || !state.tok) return;
+        // Android: un aviso silencioso barato; Windows: un enlace que lanza un proceso breve
+        const every = IS_MOBILE_APP ? 15000 : 60000;
+        const now = Date.now();
+        clearTimeout(pixpinTimer);
+        if (!force && now - pixpinLastSent < every) {
+            pixpinTimer = setTimeout(() => syncPixpin(true), every - (now - pixpinLastSent));
+            return;
+        }
+        pixpinLastSent = now;
+        const pos = state.pos;
+        const { pagina, frac, fraccion } = pixpinPosition(b, pos);
+        const payload = { doc: b.pixpin.doc, tipo: b.pixpin.tipo, pagina, frac, fraccion, t: now, palabra: pos, total: n() };
+        const core = window.__TAURI__.core;
+        const req = IS_MOBILE_APP
+            ? core.invoke('plugin:lv-tts|notifyPixpin', payload)
+            : core.invoke('pixpin_sync', { progress: Object.assign({ ruta: b.pixpin.ruta || null }, payload) });
+        req.catch(() => {});
+        b.pixpin.syncedAt = now;
+        S.books.patch(b.id, { pixpin: b.pixpin }).catch(() => {});
+    }
+
+    async function openFromPixpin(urlStr) {
+        const p = pixpinParams(urlStr);
+        if (!p) return;
+        if (state.playing) pause(false);
+        let book = (await S.books.all()).find((b) => b.pixpin && b.pixpin.doc === p.doc);
+        const isNew = !book;
+        if (isNew) {
+            const t = toast(`Abriendo «${p.nombre}» desde PixPin…`, { progress: true });
+            try {
+                const bytes = await pixpinBytes(p);
+                const res = await LV.importers.importFile(new File([bytes], p.nombre), (pct, msg) => t.update(pct, msg));
+                t.close();
+                if (!res.text || !res.text.replace(/\uFFFC/g, '').trim()) throw new Error('No se encontró texto en el documento.');
+                const images = Array.isArray(res.images) ? res.images.filter((x) => x && x.blob) : [];
+                book = await S.books.create({
+                    title: res.title || p.nombre,
+                    text: res.text,
+                    source: 'PixPin',
+                    images: images.map((x) => ({ blob: x.blob, alt: x.alt || '' })),
+                    original: res.original || null,
+                    pageOffsets: res.pageOffsets || null,
+                    cover: images.length ? await makeThumb(images[0].blob) : null,
+                });
+            } catch (err) {
+                t.close();
+                toast((err && err.message) || 'No se pudo abrir el documento de PixPin.', { error: true, duration: 6000 });
+                return;
+            }
+        }
+        book.pixpin = Object.assign({}, book.pixpin || {}, {
+            doc: p.doc, nombre: p.nombre, ruta: p.ruta, uri: p.uri, tipo: p.tipo,
+            paginas: p.paginas || (book.pixpin && book.pixpin.paginas) || 0,
+        });
+        book.tags = [...new Set([...(book.tags || []), 'PixPin'])];
+        book.source = 'PixPin';
+        await S.books.patch(book.id, { pixpin: book.pixpin, tags: book.tags, source: 'PixPin' });
+        closePanels();
+        openBook(book);
+        const hasPixpinMark = p.fraccion > 0 || p.pagina > 0 || p.frac > 0;
+        if (hasPixpinMark && (isNew || p.t > (book.progressAt || 0))) {
+            seek(wordForPixpin(book, p));
+            saveProgress(false);
+            toast('Continúas desde tu marcador verde de PixPin 🟢', { duration: 2800 });
+        } else if (!isNew) {
+            toast('Continúas donde lo dejaste en Lectura Veloz · PixPin actualizado 🟢', { duration: 2800 });
+            syncPixpin(true);
+        }
+    }
+
     /* --- Integración de escritorio (Tauri): atajo global y PixPin --- */
     function bindNative() {
         const tauri = window.__TAURI__;
@@ -2683,10 +3006,12 @@
         (async () => {
             await tauri.event.listen('quick-read', (e) => readText(e.payload));
             await tauri.event.listen('quick-read-image', (e) => readImage(e.payload));
+            await tauri.event.listen('pixpin-open', (e) => openFromPixpin(String(e.payload || '')));
             try {
                 const p = await tauri.core.invoke('quick_read_ready');
                 if (p && p.type === 'text') readText(p.text);
                 else if (p && p.type === 'image') readImage(p.dataUrl);
+                else if (p && p.type === 'pixpin') openFromPixpin(p.url);
             } catch (e) { /* comando no disponible */ }
         })();
     }
