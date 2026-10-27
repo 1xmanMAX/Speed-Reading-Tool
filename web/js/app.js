@@ -228,7 +228,32 @@
         el.app.classList.toggle('no-context', !settings.showContext);
         el.app.classList.toggle('immersive', settings.immersive);
         const meta = document.querySelector('meta[name="theme-color"]');
-        if (meta) meta.content = getComputedStyle(root).getPropertyValue('--bg').trim() || '#121418';
+        const bg = getComputedStyle(root).getPropertyValue('--bg').trim() || '#121418';
+        if (meta) meta.content = bg;
+        syncSystemBars(bg);
+    }
+
+    /* App de Android: la barra de estado va encima de la página (de borde a borde).
+       La app nativa da su alto (--safe-top/--safe-bottom, ver styles.css) y aquí se
+       eligen iconos oscuros o claros según lo claro que sea el fondo del tema. */
+    let insetsAsked = false;
+    function syncSystemBars(bg) {
+        const core = window.__TAURI__ && window.__TAURI__.core;
+        if (!core || !/Android/i.test(navigator.userAgent)) return;
+        if (!insetsAsked) {
+            insetsAsked = true;
+            core.invoke('plugin:lv-tts|insets').then((i) => {
+                const st = document.documentElement.style;
+                if (i && i.top > 0) st.setProperty('--safe-top', i.top + 'px');
+                if (i && i.bottom > 0) st.setProperty('--safe-bottom', i.bottom + 'px');
+            }).catch(() => {});
+            matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+                syncSystemBars(getComputedStyle(document.documentElement).getPropertyValue('--bg').trim());
+            });
+        }
+        const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(bg || '');
+        const light = !!m && (0.299 * parseInt(m[1], 16) + 0.587 * parseInt(m[2], 16) + 0.114 * parseInt(m[3], 16)) > 150;
+        core.invoke('plugin:lv-tts|system_bars', { light }).catch(() => {});
     }
 
     const FORMAT = {

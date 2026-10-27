@@ -12,6 +12,8 @@ Permite leer en voz alta con el motor de voz del sistema.
 - `allow-vibrate`
 - `allow-copy-uri`
 - `allow-notify-pixpin`
+- `allow-insets`
+- `allow-system-bars`
 
 ## Permission Table
 
@@ -44,6 +46,32 @@ Enables the copy_uri command without any pre-configured scope.
 <td>
 
 Denies the copy_uri command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`lv-tts:allow-insets`
+
+</td>
+<td>
+
+Enables the insets command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`lv-tts:deny-insets`
+
+</td>
+<td>
+
+Denies the insets command without any pre-configured scope.
 
 </td>
 </tr>
@@ -174,6 +202,32 @@ Enables the stop command without any pre-configured scope.
 <td>
 
 Denies the stop command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`lv-tts:allow-system-bars`
+
+</td>
+<td>
+
+Enables the system_bars command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`lv-tts:deny-system-bars`
+
+</td>
+<td>
+
+Denies the system_bars command without any pre-configured scope.
 
 </td>
 </tr>

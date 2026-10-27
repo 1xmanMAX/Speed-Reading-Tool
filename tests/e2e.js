@@ -531,7 +531,7 @@ async function openSample(page) {
             window.__fail = null;
             // Como Tauri 2: el permiso de un comando de plugin se mira con el nombre tal cual llega
             // (`lv-tts:allow-copy-uri` permite `copy_uri`, no `copyUri`), y luego se pasa a camelCase.
-            const ALLOWED = ['speak', 'stop', 'voices', 'vibrate', 'copy_uri', 'notify_pixpin', 'register_listener', 'remove_listener'];
+            const ALLOWED = ['speak', 'stop', 'voices', 'vibrate', 'copy_uri', 'notify_pixpin', 'register_listener', 'remove_listener', 'insets', 'system_bars'];
             const md = '# Capítulo uno\n\n' + Array.from({ length: 40 }, (_, i) => 'Frase número ' + (i + 1) + ' del documento de prueba.').join(' ') + '\n';
             window.__TAURI__ = {
                 core: {
@@ -544,6 +544,7 @@ async function openSample(page) {
                             return { path: '/data/user/0/com.lecturaveloz.app/cache/pixpin/' + a.name };
                         }
                         if (c === 'pixpin_read_file') return new TextEncoder().encode(md).buffer;
+                        if (c === 'plugin:lv-tts|insets') return { top: 32, right: 0, bottom: 24, left: 0 };
                         return null;
                     },
                     addPluginListener: async () => ({ unregister() {} }),
@@ -562,6 +563,12 @@ async function openSample(page) {
         await ap.waitForFunction(() => LV.app.state.book && LV.app.state.book.source === 'PixPin', null, { timeout: 30000 });
         await ap.waitForTimeout(500);
         const calls = await ap.evaluate(() => window.__calls.map((c) => c[0]));
+        const bar = await ap.evaluate(() => ({
+            btn: Math.round(document.querySelector('.hud-top .hud-btn, .hud-top button').getBoundingClientRect().top),
+            bars: window.__calls.filter((c) => c[0] === 'plugin:lv-tts|system_bars').length,
+        }));
+        check('Android: los botones de arriba quedan debajo de la barra de estado', bar.btn >= 32 + 6, bar);
+        check('Android: el color de los iconos de la barra de estado sigue al tema', bar.bars > 0, bar);
         const copy = await ap.evaluate(() => (window.__calls.find((c) => c[0] === 'plugin:lv-tts|copy_uri') || [])[1]);
         check('PixPin Android: copia el content:// con `plugin:lv-tts|copy_uri`', !!copy && copy.uri === uri, calls);
         check('PixPin Android: el nombre llega descodificado y con su extensión', copy && copy.name === 'Mi nota (1) ñ+.md', copy);

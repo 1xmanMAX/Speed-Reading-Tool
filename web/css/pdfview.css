@@ -145,7 +145,7 @@
 /* --- barra flotante */
 .pv-bar {
     position: absolute;
-    top: 12px;
+    top: calc(12px + var(--safe-top, 0px));
     left: 50%;
     transform: translateX(-50%);
     z-index: 5;
@@ -283,7 +283,7 @@
 
 @media (max-width: 480px) {
     .pv-bar {
-        top: 8px;
+        top: calc(8px + var(--safe-top, 0px));
         padding: 3px 4px;
     }
 

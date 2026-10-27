@@ -13,6 +13,9 @@ import android.os.VibratorManager
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.webkit.WebView
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
@@ -41,6 +44,11 @@ class PixpinArgs {
 }
 
 @InvokeArg
+class SystemBarsArgs {
+    var light: Boolean = false
+}
+
+@InvokeArg
 class VibrateArgs {
     var ms: Long = 18
 }
@@ -66,8 +74,11 @@ class TtsPlugin(private val activity: Activity) : Plugin(activity) {
     private var ready = false
     private var failed = false
     private val pending = mutableListOf<() -> Unit>()
+    // Barras del sistema (barra de estado arriba, navegación abajo) en px CSS.
+    private var safe = floatArrayOf(0f, 0f, 0f, 0f) // arriba, derecha, abajo, izquierda
 
     override fun load(webView: WebView) {
+        watchInsets(webView)
         tts = TextToSpeech(activity.applicationContext) { status ->
             activity.runOnUiThread {
                 ready = status == TextToSpeech.SUCCESS
@@ -77,6 +88,56 @@ class TtsPlugin(private val activity: Activity) : Plugin(activity) {
                 pending.clear()
                 tasks.forEach { it() }
             }
+        }
+    }
+
+    /**
+     * La app dibuja de borde a borde (enableEdgeToEdge): la barra de estado queda
+     * encima de la página. Se pasa su alto a la web como --safe-top / --safe-bottom
+     * para que los botones bajen y esa franja se pinte con el fondo de la app.
+     */
+    private fun watchInsets(webView: WebView) {
+        ViewCompat.setOnApplyWindowInsetsListener(webView) { v, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            val d = v.resources.displayMetrics.density
+            safe = floatArrayOf(bars.top / d, bars.right / d, bars.bottom / d, bars.left / d)
+            pushInsets(webView)
+            ViewCompat.onApplyWindowInsets(v, insets)
+        }
+        webView.post { ViewCompat.requestApplyInsets(webView) }
+    }
+
+    private fun insetsJs(): String {
+        val (t, r, b, l) = safe.map { String.format(Locale.US, "%.1fpx", it) }
+        return "(function(s){if(!s)return;s.setProperty('--safe-top','$t');s.setProperty('--safe-right','$r');" +
+            "s.setProperty('--safe-bottom','$b');s.setProperty('--safe-left','$l');})" +
+            "(document.documentElement&&document.documentElement.style)"
+    }
+
+    private fun pushInsets(webView: WebView) {
+        webView.post { webView.evaluateJavascript(insetsJs(), null) }
+    }
+
+    /** Alto de las barras del sistema, para cuando la página carga después del primer aviso. */
+    @Command
+    fun insets(invoke: Invoke) {
+        val res = JSObject()
+        res.put("top", safe[0].toDouble())
+        res.put("right", safe[1].toDouble())
+        res.put("bottom", safe[2].toDouble())
+        res.put("left", safe[3].toDouble())
+        invoke.resolve(res)
+    }
+
+    /** Iconos de la barra de estado oscuros (tema claro) o claros (tema oscuro). */
+    @Command
+    fun systemBars(invoke: Invoke) {
+        val args = invoke.parseArgs(SystemBarsArgs::class.java)
+        activity.runOnUiThread {
+            val ctl = WindowCompat.getInsetsController(activity.window, activity.window.decorView)
+            ctl.isAppearanceLightStatusBars = args.light
+            ctl.isAppearanceLightNavigationBars = args.light
+            invoke.resolve()
         }
     }
 
