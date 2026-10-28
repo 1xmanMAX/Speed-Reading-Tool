@@ -1874,9 +1874,8 @@ body.touch .page-wrap { padding-bottom: 210px; }
 .gesture-edge-right::after { right: 6px; }
 .view-reader.hud-hidden .gesture-edge::after { opacity: 0; }
 
-/* En los modos de una palabra todo el escenario responde a gestos */
-body.touch .stage { touch-action: pan-y; }
-body.touch .view-reader.gesture-full .stage { touch-action: none; }
+/* En el móvil todo el escenario responde a gestos (como VLC), en cualquier modo */
+body.touch .stage, body.touch .stage * { touch-action: none; } /* también dentro de la página (es su propio contenedor de scroll) */
 
 /* Indicador grande: solo texto, sin recuadro */
 .gesture-osd {

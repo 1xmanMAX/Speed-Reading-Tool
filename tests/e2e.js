@@ -495,6 +495,34 @@ async function openSample(page) {
         await tp.waitForTimeout(350);
         check('Táctil: mantener pulsado abre el panel rápido', (await ts()).sheet);
         await tp.screenshot({ path: path.join(OUT, '44-tactil-panel.png') });
+        await tp.evaluate(() => { document.querySelector('#sheet-scrim').click(); });
+        await tp.waitForTimeout(600);
+
+        // Pellizcar: tamaño del texto (dos dedos)
+        const p0 = await ts();
+        await touch('touchStart', [[150, 420], [240, 420]]);
+        for (let i = 1; i <= 10; i++) { await touch('touchMove', [[150 - i * 8, 420], [240 + i * 8, 420]]); await tp.waitForTimeout(16); }
+        await tp.screenshot({ path: path.join(OUT, '45-tactil-pellizcar.png') });
+        await touch('touchEnd', []);
+        await tp.waitForTimeout(200);
+        const p1 = await ts();
+        check('Táctil: pellizcar agranda el texto', p1.size > p0.size && !p1.playing && !p1.sheet, [p0.size, p1.size]);
+
+        // Modos de página: los mismos gestos en toda la pantalla (antes solo en los bordes)
+        await tp.evaluate(() => { LV.app.setMode('guided'); LV.app.seek(20); });
+        await tp.waitForTimeout(300);
+        const g0 = await tp.evaluate(() => ({ wpm: LV.app.settings.wpm, size: LV.app.settings.pageSize, pos: LV.app.state.pos }));
+        await swipe(280, 520, 280, 320);
+        await swipe(110, 320, 110, 480);
+        await swipe(90, 420, 330, 420);
+        const g1 = await tp.evaluate(() => ({ wpm: LV.app.settings.wpm, size: LV.app.settings.pageSize, pos: LV.app.state.pos }));
+        check('Táctil (modo página): deslizar en la mitad derecha cambia la velocidad', g1.wpm > g0.wpm, [g0.wpm, g1.wpm]);
+        check('Táctil (modo página): en la mitad izquierda, el tamaño', g1.size < g0.size, [g0.size, g1.size]);
+        check('Táctil (modo página): deslizar en horizontal avanza', g1.pos > g0.pos, [g0.pos, g1.pos]);
+        await tap(195, 420);
+        await tp.waitForTimeout(450);
+        check('Táctil (modo página): un toque inicia la lectura', (await ts()).playing);
+        await tp.evaluate(() => LV.app.pause());
         await tctx.close();
     }
 

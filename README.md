@@ -45,16 +45,17 @@ Lectura Veloz es una aplicación de lectura rápida, moderna, gratuita y sin con
 
 ## En el móvil: gestos al estilo VLC
 
-En Android (y en cualquier pantalla táctil), el lector se controla con gestos y muestra los valores en grande mientras deslizas:
+En Android (y en cualquier pantalla táctil), el lector se controla con gestos en **toda la pantalla y en todos los modos**, y muestra los valores en grande mientras deslizas:
 
 | Gesto | Acción |
 |---|---|
-| Deslizar ↕ en el lado **derecho** | Velocidad (palabras por minuto o velocidad de la voz) |
-| Deslizar ↕ en el lado **izquierdo** | Tamaño del texto |
+| Deslizar ↕ en la mitad **derecha** | Velocidad (palabras por minuto o velocidad de la voz), como el volumen en VLC |
+| Deslizar ↕ en la mitad **izquierda** | Tamaño del texto, como el brillo en VLC |
+| Pellizcar con dos dedos | Tamaño del texto, como el zoom en VLC |
 | Deslizar ↔ | Avanzar o retroceder, con vista previa de la palabra de destino |
 | Un toque | Pausa / reanudar |
 | Doble toque a la izquierda o a la derecha | Frase anterior o siguiente |
-| Mantener pulsado (o tocar la velocidad) | Panel rápido con controles deslizantes, modos, voz y tema |
+| Mantener pulsado (o tocar la velocidad) | Panel rápido con controles deslizantes, modos, voz y texto |
 
 - Abajo solo quedan «frase anterior», un botón ▶ grande, «frase siguiente» y la velocidad, más una barra de progreso fácil de arrastrar con números.
 - La primera vez aparece una guía de gestos; puedes volver a verla desde el panel rápido.

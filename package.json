@@ -1,7 +1,7 @@
 {
   "name": "lectura-veloz",
   "private": true,
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Lectura Veloz - lector rápido RSVP (web, PWA, escritorio y móvil con Tauri 2)",
   "scripts": {
     "tauri": "tauri",

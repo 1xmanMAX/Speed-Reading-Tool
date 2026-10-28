@@ -1673,7 +1673,9 @@
        - Toque: pausa · Doble toque a los lados: frase anterior/siguiente
        - Mantener pulsado: panel rápido
        ===================================================== */
-    const isFullGesture = () => mode().kind === 'rsvp' || mode().kind === 'peri';
+    // En el móvil los gestos mandan en toda la pantalla y en todos los modos, como en VLC:
+    // el texto se mueve deslizando a los lados (el lector ya sigue la posición).
+    const isFullGesture = () => TOUCH || mode().kind === 'rsvp' || mode().kind === 'peri';
 
     function speedInfo() {
         return voiceActive()
@@ -1824,13 +1826,54 @@
         let lastTap = null;
         let tapTimer = 0;
 
+        const halfOf = (x) => {
+            const r = el.reader.getBoundingClientRect();
+            return x - r.left < r.width / 2 ? 'left' : 'right';
+        };
         const zoneOf = (x) => {
             const r = el.reader.getBoundingClientRect();
             const f = (x - r.left) / r.width;
             return f < 0.33 ? 'left' : f > 0.67 ? 'right' : 'center';
         };
 
+        // Pellizcar = tamaño del texto (dos dedos), como el zoom de VLC
+        const touches = new Map();
+        let pinch = null;
+        const dist = () => { const p = [...touches.values()]; return Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y); };
+        const track = (e) => { if (e.pointerType !== 'mouse') touches.set(e.pointerId, { x: e.clientX, y: e.clientY }); };
+        const untrack = (e) => {
+            touches.delete(e.pointerId);
+            if (pinch && touches.size < 2) {
+                pinch = null;
+                el.reader.classList.remove('is-adjusting');
+                hideOsd(650);
+            }
+        };
+        const startPinch = () => {
+            if (g) {
+                clearTimeout(g.longTimer);
+                if (g.axis === 'h') { hideStrip(); if (g.wasPlaying) play(); }
+                g = null;
+            }
+            const info = sizeInfo();
+            pinch = { d0: Math.max(30, dist()), info, vals: buildRuler(info, 'left'), last: info.val };
+            el.reader.classList.add('is-adjusting');
+        };
+        const movePinch = () => {
+            const { info } = pinch;
+            let v = Math.round((info.val * dist() / pinch.d0) / info.step) * info.step;
+            v = clamp(v, info.min, info.max);
+            const fav = isFav(info.key, v);
+            if (!sameVal(v, pinch.last)) { if (fav) haptic(22); pinch.last = v; }
+            moveRuler(pinch.vals, v);
+            showOsd(info.fmt(v), (fav ? '★ ' : '') + info.label, fav);
+            if (!sameVal(v, settings[info.key])) setSetting(info.key, v);
+        };
+
         const down = (e, forced) => {
+            track(e);
+            if (touches.size === 2 && !pinch && state.tok) { startPinch(); return; }
+            if (pinch) return;
             if (e.pointerType === 'mouse' || g || !state.tok) return;
             if (e.target.closest('button, a, input, .fig, .pv-root')) return;
             g = { id: e.pointerId, x0: e.clientX, y0: e.clientY, t0: performance.now(), zone: forced || zoneOf(e.clientX), forced: !!forced, axis: null, el: e.currentTarget };
@@ -1841,6 +1884,8 @@
         };
 
         const move = (e) => {
+            if (touches.has(e.pointerId)) track(e);
+            if (pinch) { if (touches.size >= 2) movePinch(); return; }
             if (!g || e.pointerId !== g.id || g.long) return;
             const dx = e.clientX - g.x0;
             const dy = e.clientY - g.y0;
@@ -1851,7 +1896,8 @@
                     // En los modos de página el centro desplaza el texto: solo los bordes cambian valores
                     if (!g.forced && !isFullGesture()) { g.axis = 'none'; return; }
                     g.axis = 'v';
-                    g.kind = g.zone === 'left' ? 'size' : 'speed';
+                    // Como VLC: mitad izquierda tamaño (su brillo), mitad derecha velocidad (su volumen)
+                    g.kind = g.forced ? (g.zone === 'left' ? 'size' : 'speed') : (halfOf(g.x0) === 'left' ? 'size' : 'speed');
                     g.info = g.kind === 'size' ? sizeInfo() : speedInfo();
                     g.vals = buildRuler(g.info, g.kind === 'size' ? 'left' : 'right');
                     el.reader.classList.add('is-adjusting');
@@ -1895,6 +1941,9 @@
         };
 
         const up = (e) => {
+            const wasPinch = !!pinch;
+            untrack(e);
+            if (wasPinch) return;
             if (!g || e.pointerId !== g.id) return;
             const cur = g;
             g = null;
@@ -1941,6 +1990,7 @@
         };
 
         const cancel = (e) => {
+            untrack(e);
             if (g && e.pointerId === g.id) {
                 clearTimeout(g.longTimer);
                 if (g.axis === 'h') { hideStrip(); if (g.wasPlaying) play(); }
@@ -2446,7 +2496,7 @@
             const fig = e.target.closest('.fig');
             if (fig) { openLightbox(Number(fig.dataset.img)); return; }
             const w = e.target.closest('.w');
-            if (w) seek(Number(w.dataset.i));
+            if (w && !TOUCH) seek(Number(w.dataset.i)); // en el móvil un toque es pausa/play (gestos)
         }));
 
         // Barra de progreso
