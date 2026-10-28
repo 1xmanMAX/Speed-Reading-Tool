@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Lo único que Lectura Veloz comparte: el documento que se abre en PixPin. -->
+<paths>
+    <cache-path name="abrir_en_pixpin" path="abrir-en-pixpin/" />
+</paths>

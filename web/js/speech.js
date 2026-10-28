@@ -18,7 +18,7 @@
   var LV = window.LV;
 
   var MAX_CHARS = 600;
-  var CHARS_PER_SEC = 14.5;        // velocidad de habla estimada a rate = 1
+  var CHARS_PER_SEC = 13;          // velocidad de habla estimada a rate = 1 (peso por segundo)
   var VOICES_TIMEOUT = 1500;
   var CACHE_LIMIT = 6;
   var SAMPLE_TEXT = 'Hola, así sonará tu lectura.';
@@ -143,8 +143,27 @@
     return s;
   }
 
-  function estimateSeconds(words, rate) {
-    return totalWeight(words) / (CHARS_PER_SEC * (rate || 1));
+  function estimateSeconds(words, rate, pace) {
+    return totalWeight(words) / ((pace || CHARS_PER_SEC) * (rate || 1));
+  }
+
+  // Ritmo real de cada voz (peso por segundo a rate = 1), medido al terminar cada frase
+  // de las voces que no avisan palabra a palabra: el resaltado estimado se ajusta a la voz
+  // en vez de ir con una velocidad fija (con voces lentas se adelantaba).
+  var PACE_KEY = 'lv.voicePace';
+  var paceInfo = (function () {
+    try { return JSON.parse(window.localStorage.getItem(PACE_KEY) || '{}') || {}; } catch (e) { return {}; }
+  })();
+  function paceOf(key) {
+    var p = key && paceInfo[key];
+    return p > 4 && p < 40 ? p : CHARS_PER_SEC;
+  }
+  function learnPace(key, weight, secs, rate) {
+    if (!key || !(secs > 1.5) || !(weight > 25)) return;
+    var p = weight / (secs * (rate || 1));
+    if (!(p > 4 && p < 40)) return;
+    paceInfo[key] = paceInfo[key] ? paceInfo[key] * 0.6 + p * 0.4 : p;
+    try { window.localStorage.setItem(PACE_KEY, JSON.stringify(paceInfo)); } catch (e) { /* sin almacenamiento */ }
   }
 
   function wordLengthAt(text, idx) {
@@ -300,7 +319,9 @@
     var gotBoundary = false;
     var estTimer = null, watchdog = null, startTimer = null;
     var lastIdx = -1;
-    var estSecs = estimateSeconds(words, rate);
+    var pace = paceOf(voiceKey);
+    var estSecs = estimateSeconds(words, rate, pace);
+    var startedAt = 0, byWatchdog = false; // byWatchdog: terminó sin acabar la frase (no se mide)
 
     function emit(idx, len) {
       if (idx === lastIdx) return;
@@ -314,7 +335,7 @@
 
     function runEstimator() {
       var t0 = Date.now();
-      var unit = 1000 / (CHARS_PER_SEC * rate);
+      var unit = 1000 / (pace * rate);
       var i = 0, at = 0; // at: instante (ms) en que empieza la palabra i
       function step() {
         estTimer = null;
@@ -347,6 +368,9 @@
       if (finished) return;
       finished = true;
       if (voiceKey && !gotBoundary && started && !err && !(voiceKey in boundaryInfo)) boundaryInfo[voiceKey] = false;
+      if (!gotBoundary && started && !err && !cancelled && !byWatchdog) {
+        learnPace(voiceKey, totalWeight(words), (Date.now() - startedAt) / 1000, rate);
+      }
       release();
       if (cancelled) return;
       if (err) safeCall(opts.onError, err);
@@ -356,6 +380,7 @@
     u.onstart = function () {
       if (finished || started) return;
       started = true;
+      startedAt = Date.now();
       safeCall(opts.onStart);
       if (!gotBoundary) runEstimator();
     };
@@ -378,7 +403,7 @@
     u.onerror = function (ev) {
       var code = ev && ev.error;
       if (cancelled) return finish(null);
-      if (code === 'interrupted' || code === 'canceled') return finish(null); // cortado desde fuera: seguir
+      if (code === 'interrupted' || code === 'canceled') { byWatchdog = true; return finish(null); } // cortado desde fuera: seguir (sin medir)
       var msg = code === 'not-allowed'
         ? 'El navegador bloqueó la voz. Pulsa reproducir de nuevo.'
         : code === 'language-unavailable' || code === 'voice-unavailable'
@@ -405,6 +430,7 @@
     // Vigilante: si onend no llega (bug de Chrome con voces de red), terminar igualmente.
     watchdog = setTimeout(function () {
       if (finished) return;
+      byWatchdog = true;
       try { synth.cancel(); } catch (e) { /* ignorar */ }
       finish(null);
     }, estSecs * 2000 + 3000);

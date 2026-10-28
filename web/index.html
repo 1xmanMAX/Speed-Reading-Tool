@@ -128,7 +128,7 @@
                     <button class="hud-chip" id="mode-btn" aria-haspopup="menu" aria-expanded="false" title="Modo de lectura (M)">
                         <span class="mode-dot"></span><span id="mode-name">Enfoque</span><svg class="chev"><use href="#i-chevron"/></svg>
                     </button>
-                    <button class="hud-btn" id="btn-original" title="Vista original del documento (O)"><svg><use href="#i-doc"/></svg></button>
+                    <button class="hud-btn" id="btn-original" title="Abrir el documento en PixPin (O)"><svg><use href="#i-doc"/></svg></button>
                     <button class="hud-btn" id="btn-voice" title="Leer en voz alta (V)"><svg><use href="#i-headphones"/></svg></button>
                     <button class="hud-btn" id="btn-pip" title="Ventana flotante (P)"><svg><use href="#i-pip"/></svg></button>
                     <button class="hud-btn" data-open="settings" title="Ajustes (S)"><svg><use href="#i-settings"/></svg></button>
@@ -265,7 +265,7 @@
                 </label>
                 <div class="sheet-actions">
                     <button class="sheet-act" id="sheet-voice"><svg><use href="#i-headphones"/></svg><span>Voz</span></button>
-                    <button class="sheet-act" id="sheet-original"><svg><use href="#i-doc"/></svg><span>Original</span></button>
+                    <button class="sheet-act" id="sheet-original" title="Abrir el documento en PixPin"><svg><use href="#i-doc"/></svg><span>En PixPin</span></button>
                     <button class="sheet-act" id="sheet-theme"><svg><use href="#i-sun"/></svg><span>Tema</span></button>
                     <button class="sheet-act" id="sheet-gestures"><svg><use href="#i-spark"/></svg><span>Gestos</span></button>
                     <button class="sheet-act" id="sheet-settings"><svg><use href="#i-settings"/></svg><span>Ajustes</span></button>
@@ -402,6 +402,11 @@
                 <label class="field">
                     <span class="field-label">Velocidad de la voz <output data-for="voiceRate"></output></span>
                     <input type="range" min="0.5" max="3" step="0.1" data-setting="voiceRate">
+                </label>
+                <label class="field">
+                    <span class="field-label">Sincronía del resaltado: retrasar <output data-for="voiceDelay"></output></span>
+                    <input type="range" min="0" max="1500" step="50" data-setting="voiceDelay">
+                    <small class="fine">Si el texto resaltado va por delante de la voz, súbelo (con auriculares Bluetooth suele hacer falta 300–600 ms). Si va por detrás, bájalo.</small>
                 </label>
                 <div class="field" data-show-if="voiceProvider=azure">
                     <span class="field-label">Clave de Azure Speech</span>

@@ -1734,6 +1734,7 @@ body.mini-mode .mini { position: fixed; inset: 0; border-radius: 0; }
    ========================================================= */
 #btn-original { display: none; }
 .view-reader.has-original #btn-original { display: inline-grid; }
+body.app-native #btn-original { display: inline-grid; } /* en la app: «Abrir en PixPin» */
 
 .original-view { position: absolute; inset: 0; z-index: 7; background: var(--surface-2); }
 .original-host { position: absolute; inset: 0; }

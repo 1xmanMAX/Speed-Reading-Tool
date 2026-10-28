@@ -209,6 +209,15 @@ async function openSample(page) {
     await shot(page, '16c-modo-escuchar');
     await page.evaluate(() => LV.app.pause());
     check('Escuchar: la voz avanza el texto palabra a palabra', heard.pos > 5, heard);
+
+    // Sincronía: con retraso, el resaltado espera a que suene la palabra
+    await page.evaluate(() => { LV.app.setSetting('voiceDelay', 700); LV.app.seek(0); LV.app.play(); });
+    await page.waitForTimeout(450);
+    const early = (await state(page)).pos;
+    await page.waitForTimeout(1600);
+    const later = (await state(page)).pos;
+    await page.evaluate(() => { LV.app.pause(); LV.app.setSetting('voiceDelay', 100); });
+    check('Voz: el resaltado espera el retraso elegido (no se adelanta a la voz)', early === 0 && later > 3, { early, later });
     const voices = await page.$$eval('#voice-select option', (o) => o.map((x) => x.textContent));
     check('Lista las voces de Microsoft', voices.some((v) => /Microsoft/.test(v)), voices);
     await page.locator('[data-open="settings"]:visible').first().click();
@@ -319,7 +328,8 @@ async function openSample(page) {
     await page.setInputFiles('#file-input', path.join(FIX, 'shot.png'));
     await page.waitForTimeout(400);
     await shot(page, '19-ocr-en-progreso');
-    await page.waitForFunction(() => LV.app.state.book && LV.app.state.book.source === 'OCR', null, { timeout: 90000 });
+    // Espera a ESTE libro (el anterior también es de OCR): si no, su OCR terminaría más tarde y se abriría encima
+    await page.waitForFunction(() => LV.app.state.book && LV.app.state.book.source === 'OCR' && /primer párrafo/.test(LV.app.state.book.text), null, { timeout: 90000 });
     const ocr = await page.evaluate(() => LV.app.state.book.text.slice(0, 80));
     check('OCR de una captura de pantalla', ocr.length > 10, ocr);
     await page.evaluate(() => LV.app.setMode('guided'));
@@ -351,7 +361,8 @@ async function openSample(page) {
     await page.waitForTimeout(500);
     await page.click('#recent-books .book-card');
     await page.waitForFunction(() => LV.app.state.tok);
-    check('Recuerda la posición al recargar', (await state(page)).pos === 15, (await state(page)).pos);
+    const reopened = await page.evaluate(() => ({ pos: LV.app.state.pos, title: LV.app.state.book.title }));
+    check('Recuerda la posición al recargar', reopened.pos === 15 && reopened.title === 'Texto pegado de prueba', reopened);
 
     // Inicio con historial y estadísticas
     await goHome(page);
@@ -531,11 +542,17 @@ async function openSample(page) {
             window.__fail = null;
             // Como Tauri 2: el permiso de un comando de plugin se mira con el nombre tal cual llega
             // (`lv-tts:allow-copy-uri` permite `copy_uri`, no `copyUri`), y luego se pasa a camelCase.
-            const ALLOWED = ['speak', 'stop', 'voices', 'vibrate', 'copy_uri', 'notify_pixpin', 'register_listener', 'remove_listener', 'insets', 'system_bars'];
+            const ALLOWED = ['speak', 'stop', 'voices', 'vibrate', 'copy_uri', 'notify_pixpin', 'register_listener', 'remove_listener', 'insets', 'system_bars', 'open_in_pixpin'];
             const md = '# Capítulo uno\n\n' + Array.from({ length: 40 }, (_, i) => 'Frase número ' + (i + 1) + ' del documento de prueba.').join(' ') + '\n';
             window.__TAURI__ = {
                 core: {
-                    invoke: async (c, a) => {
+                    invoke: async (c, a, o) => {
+                        if (c === 'pixpin_stage_file') {
+                            const name = decodeURIComponent((o && o.headers && o.headers['x-name']) || '');
+                            window.__stage = { size: a && a.byteLength, name };
+                            window.__calls.push([c, window.__stage]);
+                            return '/data/user/0/com.lecturaveloz.app/cache/abrir-en-pixpin/' + name;
+                        }
                         window.__calls.push([c, JSON.parse(JSON.stringify(a || {}))]);
                         const m = /^plugin:lv-tts\|(.+)$/.exec(c);
                         if (m && !ALLOWED.includes(m[1])) throw 'Command ' + c + ' not allowed by ACL';
@@ -582,6 +599,19 @@ async function openSample(page) {
         await ap.waitForTimeout(300);
         const back = await ap.evaluate(() => window.__calls.filter((c) => /notify/i.test(c[0])).map((c) => c[0]));
         check('PixPin Android: devuelve el punto con `plugin:lv-tts|notify_pixpin`', back.length > 0 && back.every((c) => c === 'plugin:lv-tts|notify_pixpin'), back);
+        // «Original» → el documento se abre en PixPin (no en un visor de Lectura Veloz)
+        await ap.evaluate(() => { document.querySelector('#sheet-original').click(); });
+        await ap.waitForTimeout(800);
+        const opened = await ap.evaluate(() => ({
+            stage: window.__stage || null,
+            open: (window.__calls.find((c) => c[0] === 'plugin:lv-tts|open_in_pixpin') || [])[1] || null,
+            inside: !document.querySelector('#original-view').hidden,
+        }));
+        check('Abrir en PixPin: manda el archivo original tal cual (nombre y bytes)',
+            !!opened.stage && opened.stage.name === 'Mi nota (1) ñ+.md' && opened.stage.size > 10, opened.stage);
+        check('Abrir en PixPin: Android lo abre en PixPin con su código de mensaje y tipo',
+            !!opened.open && opened.open.doc === 'nota01' && opened.open.mime === 'text/markdown' &&
+            /abrir-en-pixpin\/Mi nota/.test(opened.open.path) && !opened.inside, opened.open);
         // Si falla, el aviso dice qué paso y por qué
         await ap.evaluate(() => { window.__fail = 'No se pudo leer el documento de PixPin: PixPin no dio permiso de lectura'; });
         await ap.evaluate((u) => window.__ev['pixpin-open']({ payload: u }), link('otro02', 'Otro.pdf'));

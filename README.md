@@ -79,6 +79,7 @@ En Android (y en cualquier pantalla táctil), el lector se controla con gestos y
   | Imágenes y capturas | OCR (Indra): español, inglés y unos 50 idiomas de alfabeto latino |
 
   - **PDF escaneados:** las páginas sin texto se pasan por **OCR** automáticamente.
+  - **Voz y resaltado sincronizados:** el resaltado aprende el ritmo real de cada voz y se puede retrasar (*Ajustes → Voz → Sincronía del resaltado*) si la voz va por detrás, algo habitual con auriculares Bluetooth.
   - **OCR con [Indra](https://github.com/datalab-to/indra)** (Datalab), ejecutado en tu dispositivo con ONNX Runtime:
     - endereza páginas torcidas o giradas, respeta las columnas y quita cabeceras y números de página;
     - en nuestras pruebas con páginas escaneadas inclinadas acierta ~99,5 % de las palabras (Tesseract, 2–50 %) y es 2–3 veces más rápido;
@@ -88,7 +89,8 @@ En Android (y en cualquier pantalla táctil), el lector se controla con gestos y
   - **Imágenes del documento:** se conservan las de EPUB, Word, ODT, FB2, Kindle, PowerPoint, HTML, Markdown y PDF.
     - En los modos de página aparecen dentro del texto; al hacer clic se abren a tamaño completo.
     - En los modos de una palabra se muestran unos segundos al llegar a ellas. La pausa se ajusta en *Ajustes → Imágenes*.
-  - **Vista original del PDF** (botón 📄 o tecla `O`): muestra las páginas reales con su diseño, zoom y modo nocturno. *Leer desde esta página* continúa la lectura rápida desde ahí.
+  - **Ver el documento en PixPin** (botón 📄, tecla `O` o «En PixPin» en el panel rápido): en la app de Android y Windows, el PDF, Word, EPUB, Markdown o texto se abre en **PixPin Pro**, que es la app de previsualizar (ver `docs/PIXPIN.md`). Si el libro vino de PixPin, se abre su mensaje con el marcador verde.
+  - **En el navegador**, los PDF se siguen viendo dentro (páginas reales, zoom y modo nocturno; *Leer desde esta página* continúa la lectura rápida desde ahí).
   - También puedes pegar texto o capturas con Ctrl+V desde cualquier pantalla.
 - **Integración con PixPin**:
   - El atajo global **Ctrl+Alt+R** lee lo que tengas en el portapapeles.

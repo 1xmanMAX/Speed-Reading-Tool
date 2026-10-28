@@ -60,6 +60,27 @@ await core.invoke('plugin:lv-tts|notify_pixpin', { doc, tipo, pagina, frac, frac
 
 Si algo falla, el aviso dice qué paso falló (copiar, leer o importar) y el motivo exacto.
 
+### «En PixPin»: los documentos se ven en PixPin, no en Lectura Veloz
+
+Lectura Veloz se dedica a la lectura veloz; para **ver** el documento (su diseño, imágenes,
+páginas) usa PixPin, que es la app de previsualizar. El botón **«En PixPin»** del panel rápido
+(mantener pulsado en el lector) y el botón de documento de la barra de arriba en escritorio
+(tecla **O**) abren el libro en PixPin:
+
+| | Cómo |
+|---|---|
+| **Android** | El archivo original (guardado al importarlo) se deja en `cache/abrir-en-pixpin/` y se manda con `ACTION_VIEW` a `com.forge.pixpin` (FileProvider `com.lecturaveloz.app.lvfiles`, permiso de lectura temporal). PixPin lo abre en su visor de PDF, Word, EPUB, Markdown, texto… Si el libro vino de PixPin, va el extra `com.lecturaveloz.extra.PIXPIN_DOC` con su `doc`: PixPin (≥ esta versión) abre **ese mensaje** con su marcador verde en vez de una copia. También `com.lecturaveloz.extra.PAGINA` (desde 1) en un PDF. |
+| **Windows** | `pixpinmax://abrir?ruta=<archivo>&pagina=<N>`, el mismo «Abrir con PixPin». Si el libro vino de PixPin, la ruta es la de su archivo (con sus marcas); si no, la copia de `abrir-en-pixpin/` en la caché de la app. |
+| **Navegador** | No hay PixPin: los PDF se siguen viendo con el visor interno («Vista original»). |
+
+Un texto pegado o un libro importado antes de la 0.5.0 (sin archivo guardado) se manda como `.md`.
+
+```js
+const path = await core.invoke('pixpin_stage_file', bytes, { headers: { 'x-name': encodeURIComponent(nombre) } });
+await core.invoke('plugin:lv-tts|open_in_pixpin', { path, mime, doc, pagina }); // Android
+await core.invoke('pixpin_open', { ruta: path, pagina });                     // escritorio
+```
+
 > Si usas el **PixPin original** (el de capturas de pixpin.com), sigue el resto de este manual: atajo + OCR.
 
 ---

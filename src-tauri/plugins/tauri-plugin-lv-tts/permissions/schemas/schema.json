@@ -331,6 +331,18 @@
           "markdownDescription": "Denies the notify_pixpin command without any pre-configured scope."
         },
         {
+          "description": "Enables the open_in_pixpin command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-open-in-pixpin",
+          "markdownDescription": "Enables the open_in_pixpin command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_in_pixpin command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-open-in-pixpin",
+          "markdownDescription": "Denies the open_in_pixpin command without any pre-configured scope."
+        },
+        {
           "description": "Enables the register_listener command without any pre-configured scope.",
           "type": "string",
           "const": "allow-register-listener",
@@ -415,10 +427,10 @@
           "markdownDescription": "Denies the voices command without any pre-configured scope."
         },
         {
-          "description": "Permite leer en voz alta con el motor de voz del sistema.\n#### This default permission set includes:\n\n- `allow-speak`\n- `allow-stop`\n- `allow-voices`\n- `allow-register-listener`\n- `allow-remove-listener`\n- `allow-vibrate`\n- `allow-copy-uri`\n- `allow-notify-pixpin`\n- `allow-insets`\n- `allow-system-bars`",
+          "description": "Permite leer en voz alta con el motor de voz del sistema.\n#### This default permission set includes:\n\n- `allow-speak`\n- `allow-stop`\n- `allow-voices`\n- `allow-register-listener`\n- `allow-remove-listener`\n- `allow-vibrate`\n- `allow-copy-uri`\n- `allow-notify-pixpin`\n- `allow-insets`\n- `allow-system-bars`\n- `allow-open-in-pixpin`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Permite leer en voz alta con el motor de voz del sistema.\n#### This default permission set includes:\n\n- `allow-speak`\n- `allow-stop`\n- `allow-voices`\n- `allow-register-listener`\n- `allow-remove-listener`\n- `allow-vibrate`\n- `allow-copy-uri`\n- `allow-notify-pixpin`\n- `allow-insets`\n- `allow-system-bars`"
+          "markdownDescription": "Permite leer en voz alta con el motor de voz del sistema.\n#### This default permission set includes:\n\n- `allow-speak`\n- `allow-stop`\n- `allow-voices`\n- `allow-register-listener`\n- `allow-remove-listener`\n- `allow-vibrate`\n- `allow-copy-uri`\n- `allow-notify-pixpin`\n- `allow-insets`\n- `allow-system-bars`\n- `allow-open-in-pixpin`"
         }
       ]
     }

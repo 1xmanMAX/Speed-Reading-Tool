@@ -1,6 +1,8 @@
 package com.lecturaveloz.tts
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -13,6 +15,7 @@ import android.os.VibratorManager
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.webkit.WebView
+import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -41,6 +44,14 @@ class PixpinArgs {
     var t: Long = 0
     var palabra: Int = 0
     var total: Int = 0
+}
+
+@InvokeArg
+class OpenInPixpinArgs {
+    lateinit var path: String
+    var mime: String? = null
+    var doc: String? = null
+    var pagina: Int = 0
 }
 
 @InvokeArg
@@ -292,13 +303,49 @@ class TtsPlugin(private val activity: Activity) : Plugin(activity) {
         }.start()
     }
 
+    /**
+     * **Abrir en PixPin**: el documento del libro (ya guardado en `cache/abrir-en-pixpin/` por
+     * `pixpin_stage_file`) se abre en PixPin con ACTION_VIEW, como «Abrir con» desde el
+     * explorador: PixPin lo enseña en su visor de PDF, Word, EPUB, Markdown o texto.
+     * Extras para PixPin: `com.lecturaveloz.extra.PIXPIN_DOC` (el código de su mensaje, si el
+     * libro vino de PixPin: abre ese mensaje con su marcador verde) y `…PAGINA` (desde 1).
+     */
+    @Command
+    fun openInPixpin(invoke: Invoke) {
+        val a = invoke.parseArgs(OpenInPixpinArgs::class.java)
+        try {
+            val dir = File(activity.cacheDir, "abrir-en-pixpin").canonicalFile
+            val file = File(a.path).canonicalFile
+            if (file.parentFile != dir || !file.isFile) {
+                invoke.reject("No se encontró el documento preparado para PixPin.")
+                return
+            }
+            val uri = FileProvider.getUriForFile(activity, activity.packageName + ".lvfiles", file)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, a.mime?.takeIf { it.isNotBlank() } ?: "application/octet-stream")
+                setPackage(PIXPIN)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                clipData = ClipData.newRawUri(file.name, uri)
+                a.doc?.takeIf { it.isNotBlank() }?.let { putExtra("com.lecturaveloz.extra.PIXPIN_DOC", it) }
+                if (a.pagina > 0) putExtra("com.lecturaveloz.extra.PAGINA", a.pagina)
+            }
+            activity.startActivity(intent)
+            invoke.resolve()
+        } catch (e: ActivityNotFoundException) {
+            invoke.reject("PixPin no está instalada (o es una versión que no abre este formato).")
+        } catch (e: Exception) {
+            android.util.Log.w("LecturaVelozPixPin", "openInPixpin ${a.path}", e)
+            invoke.reject("No se pudo abrir en PixPin: ${e.message ?: e.javaClass.simpleName}")
+        }
+    }
+
     /** Devuelve a PixPin el punto de lectura para que mueva su marcador verde 🟢. */
     @Command
     fun notifyPixpin(invoke: Invoke) {
         val a = invoke.parseArgs(PixpinArgs::class.java)
         try {
             val intent = Intent("com.forge.pixpin.LECTURA_VELOZ").apply {
-                setPackage("com.forge.pixpin")
+                setPackage(PIXPIN)
                 putExtra("doc", a.doc)
                 putExtra("tipo", if (a.tipo == "pdf") "pdf" else "texto")
                 putExtra("pagina", a.pagina.coerceAtLeast(0))
@@ -313,5 +360,9 @@ class TtsPlugin(private val activity: Activity) : Plugin(activity) {
         } catch (e: Exception) {
             invoke.reject("No se pudo avisar a PixPin: ${e.message}")
         }
+    }
+
+    companion object {
+        private const val PIXPIN = "com.forge.pixpin"
     }
 }

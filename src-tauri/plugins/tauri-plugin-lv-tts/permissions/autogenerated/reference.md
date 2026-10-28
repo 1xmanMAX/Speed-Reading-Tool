@@ -14,6 +14,7 @@ Permite leer en voz alta con el motor de voz del sistema.
 - `allow-notify-pixpin`
 - `allow-insets`
 - `allow-system-bars`
+- `allow-open-in-pixpin`
 
 ## Permission Table
 
@@ -98,6 +99,32 @@ Enables the notify_pixpin command without any pre-configured scope.
 <td>
 
 Denies the notify_pixpin command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`lv-tts:allow-open-in-pixpin`
+
+</td>
+<td>
+
+Enables the open_in_pixpin command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`lv-tts:deny-open-in-pixpin`
+
+</td>
+<td>
+
+Denies the open_in_pixpin command without any pre-configured scope.
 
 </td>
 </tr>

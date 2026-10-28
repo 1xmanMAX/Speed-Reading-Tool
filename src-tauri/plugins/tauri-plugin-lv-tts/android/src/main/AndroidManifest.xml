@@ -10,4 +10,17 @@
         <!-- PixPin Pro: devolverle el progreso de lectura (marcador verde) -->
         <package android:name="com.forge.pixpin" />
     </queries>
+    <application>
+        <!-- «Abrir en PixPin»: el documento del libro se le pasa a PixPin con permiso
+             de lectura temporal (solo la carpeta cache/abrir-en-pixpin/). -->
+        <provider
+            android:name="com.lecturaveloz.tts.LvFileProvider"
+            android:authorities="${applicationId}.lvfiles"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/lv_file_paths" />
+        </provider>
+    </application>
 </manifest>

@@ -53,6 +53,9 @@
         voiceProvider: 'system',
         voiceId: '',
         voiceRate: 1,
+        // Retraso del resaltado respecto al motor de voz (ms): el sonido sale un poco después
+        // de que el motor marca la palabra (más con auriculares Bluetooth).
+        voiceDelay: /Android/i.test(navigator.userAgent) ? 200 : 100,
         azureKey: '',
         azureRegion: '',
         immersive: true,
@@ -267,6 +270,7 @@
         columnWidth: (v) => `${v} car.`,
         bionicRatio: (v) => `${Math.round(v * 100)}%`,
         voiceRate: (v) => `${Number(v).toFixed(1)}×`,
+        voiceDelay: (v) => (Number(v) === 0 ? 'sin retraso' : `${v} ms`),
         imagePause: (v) => `${Number(v).toFixed(1)} s`,
     };
 
@@ -359,6 +363,8 @@
             case 'voice':
                 restartIfPlaying();
                 updateMeta();
+                break;
+            case 'voiceDelay':
                 break;
             case 'voiceRate': case 'voiceId':
                 configureSpeech();
@@ -761,6 +767,7 @@
     }
 
     let speechHandle = null;
+    const voiceTimers = new Set(); // resaltados pendientes (voiceDelay)
 
     function speakFrom(start) {
         if (!state.playing || !LV.speech) return;
@@ -781,20 +788,32 @@
         const myHandle = {};
         speechHandle = myHandle;
         const live = () => state.playing && state.speaking && speechHandle === myHandle;
+        // El resaltado va `voiceDelay` ms por detrás del motor, para que coincida con lo que se oye.
+        // La frase siguiente se pide ya (sin silencios); su resaltado espera igual que el resto.
+        const delay = Math.max(0, Number(settings.voiceDelay) || 0);
+        const later = (fn) => {
+            if (!delay) { fn(); return; }
+            const t = setTimeout(() => { voiceTimers.delete(t); if (state.playing && state.speaking) fn(); }, delay);
+            voiceTimers.add(t);
+        };
         myHandle.h = LV.speech.speak(text, {
             lang: 'es-ES',
             onWord: (charIndex) => {
                 if (!live()) return;
                 const idx = start + lowerBound(offsets, charIndex);
-                if (idx > state.pos) countRead(idx - state.pos);
-                if (idx !== state.pos) setPos(unitStart(idx));
+                later(() => {
+                    if (idx > state.pos) countRead(idx - state.pos);
+                    if (idx !== state.pos) setPos(unitStart(idx));
+                });
             },
             onEnd: () => {
                 if (!live()) return;
-                countRead(Math.max(0, end - state.pos));
-                if (end >= n()) { finish(); return; }
-                setPos(end);
-                if (checkSessionLimit()) return;
+                if (end >= n()) { later(() => { countRead(Math.max(0, end - state.pos)); finish(); }); return; }
+                later(() => {
+                    countRead(Math.max(0, end - state.pos));
+                    setPos(end);
+                    checkSessionLimit();
+                });
                 speakFrom(end);
             },
             onError: (err) => {
@@ -813,6 +832,8 @@
     }
 
     function stopSpeech() {
+        voiceTimers.forEach(clearTimeout);
+        voiceTimers.clear();
         if (!state.speaking) return;
         state.speaking = false;
         speechHandle = null;
@@ -900,6 +921,9 @@
         if (moved) state.book.progressAt = Date.now();
         if (finished) state.book.finished = true;
         const fields = { index: state.pos, lastOpened: state.book.lastOpened, progressAt: state.book.progressAt || 0, finished: !!state.book.finished, mode: settings.mode };
+        // Copia síncrona: si la app se cierra antes de que IndexedDB termine de escribir
+        // (salir de golpe en Android, recargar), al volver se usa esta (lastPos).
+        try { localStorage.setItem('lv.pos.' + state.book.id, JSON.stringify({ i: state.pos, t: state.book.lastOpened, p: fields.progressAt })); } catch (e) { /* lleno */ }
         S.books.patch(state.book.id, fields).catch(() => {});
         if (state.book.pixpin && (moved || now)) syncPixpin(!!now);
     }
@@ -1487,11 +1511,15 @@
         return starts && starts.length ? lowerBound(starts, pos) + 1 : 1;
     }
 
+    // La vista original de dentro de la app (pdf.js) es para PDF y solo en el navegador:
+    // en la app nativa los documentos se abren en PixPin (openInPixpin).
+    const canViewOriginal = (b) => !!(b && b.hasOriginal && (b.originalType || 'pdf') === 'pdf');
+
     async function openOriginal() {
         if (state.pdfView) return closeOriginal();
         if (!state.original && state.book && state.book.hasOriginal && state.assetsReady) await state.assetsReady;
         if (!state.original || !LV.pdfview) {
-            toast(state.book && state.book.hasOriginal ? 'Cargando el documento…' : 'Este documento no tiene vista original.', { duration: 1800 });
+            toast(canViewOriginal(state.book) ? 'Cargando el documento…' : 'Este documento no tiene vista original.', { duration: 1800 });
             return;
         }
         if (state.playing) pause();
@@ -1905,7 +1933,7 @@
         syncFavUI('speed');
         syncFavUI('size');
         $('#sheet-voice').classList.toggle('is-on', voiceActive());
-        $('#sheet-original').disabled = !(state.book && state.book.hasOriginal);
+        $('#sheet-original').disabled = !(state.book && (NATIVE_APP || canViewOriginal(state.book)));
         $$('.sheet-mode').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === settings.mode)));
     }
 
@@ -1991,7 +2019,7 @@
             }
         });
         $('#sheet-voice').addEventListener('click', () => { toggleVoice(); syncSheet(); });
-        $('#sheet-original').addEventListener('click', () => { closeSheet(); openOriginal(); });
+        $('#sheet-original').addEventListener('click', () => { closeSheet(); openInPixpin(); });
         $('#sheet-theme').addEventListener('click', cycleTheme);
         $('#sheet-gestures').addEventListener('click', () => { closeSheet(); $('#gesture-coach').hidden = false; });
         $('#sheet-settings').addEventListener('click', () => { closeSheet(); openPanel('settings'); });
@@ -2317,7 +2345,7 @@
         $('#theme-cycle').addEventListener('click', cycleTheme);
         $('#go-home').addEventListener('click', showHome);
         $('#reader-back').addEventListener('click', showHome);
-        $('#btn-original').addEventListener('click', openOriginal);
+        $('#btn-original').addEventListener('click', openInPixpin);
         $('#original-read').addEventListener('click', readFromOriginalPage);
         el.voiceBtn.addEventListener('click', toggleVoice);
 
@@ -2451,7 +2479,7 @@
         else if (k === 'm' || k === 'M') toggleModeMenu();
         else if (k === 'v' || k === 'V') toggleVoice();
         else if (k === 'p' || k === 'P') openMini();
-        else if ((k === 'o' || k === 'O') && state.book && state.book.hasOriginal) openOriginal();
+        else if ((k === 'o' || k === 'O') && state.book) openInPixpin();
         else if (k === 'Home') { e.preventDefault(); seek(0); }
         else if (k === 'End') { e.preventDefault(); seek(n() - 1); }
         else if (k === '+' || k === '=') setSetting(mode().kind === 'rsvp' ? 'rsvpSize' : 'pageSize', mode().kind === 'rsvp' ? clamp(settings.rsvpSize + 4, 28, 120) : clamp(settings.pageSize + 1, 14, 32));
@@ -2650,7 +2678,7 @@
             if (!state.imgAt.has(im.at)) state.imgAt.set(im.at, []);
             state.imgAt.get(im.at).push(im.k);
         }
-        el.reader.classList.toggle('has-original', !!book.hasOriginal);
+        el.reader.classList.toggle('has-original', canViewOriginal(book));
         if (!book.imageCount && !book.hasOriginal) return;
         let assets = null;
         try { assets = await S.books.getAssets(book.id); } catch (e) { assets = null; }
@@ -2659,6 +2687,15 @@
         state.original = assets.original || null;
         invalidateWindow();
         if (!el.reader.hidden) render({ jump: true });
+    }
+
+    /** La copia de saveProgress, si es más nueva que lo guardado en IndexedDB. */
+    function lastPos(book) {
+        try {
+            const v = JSON.parse(localStorage.getItem('lv.pos.' + book.id) || 'null');
+            if (v && Number.isFinite(v.i) && v.t > (book.lastOpened || 0) && v.i !== book.index) return v;
+        } catch (e) { /* sin acceso */ }
+        return null;
     }
 
     function openBook(book) {
@@ -2671,6 +2708,8 @@
         state.assetsReady = loadAssets(book);
         state.chunkCache.clear();
         buildPrefix();
+        const saved = lastPos(book);
+        if (saved) { book.index = saved.i; book.progressAt = Math.max(book.progressAt || 0, saved.p || 0); }
         state.pos = clamp(book.index || 0, 0, Math.max(0, n() - 1));
         state.pausedByUser = false;
         invalidateWindow();
@@ -2715,6 +2754,83 @@
         renderHomeStats();
     }
 
+    /* --- Abrir en PixPin --- */
+    // «Original» abre el documento en PixPin (su visor de PDF, Word, EPUB, Markdown…), que es
+    // la app de previsualizar; Lectura Veloz se queda con la lectura veloz. El archivo se
+    // guarda tal cual al importarlo (originalOf) para poder mandarlo después.
+    const NATIVE_APP = !!(window.__TAURI__ && window.__TAURI__.core);
+    const IS_ANDROID_APP = NATIVE_APP && /Android/i.test(navigator.userAgent);
+    if (NATIVE_APP) document.body.classList.add('app-native');
+    const MAX_ORIGINAL = 200 * 1024 * 1024;
+    const MIME_BY_EXT = {
+        pdf: 'application/pdf', epub: 'application/epub+zip', md: 'text/markdown', markdown: 'text/markdown',
+        txt: 'text/plain', html: 'text/html', htm: 'text/html', xhtml: 'application/xhtml+xml', csv: 'text/csv',
+        srt: 'application/x-subrip', vtt: 'text/vtt', json: 'application/json', rtf: 'application/rtf',
+        docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        odt: 'application/vnd.oasis.opendocument.text', ods: 'application/vnd.oasis.opendocument.spreadsheet',
+        fb2: 'application/x-fictionbook+xml', mobi: 'application/x-mobipocket-ebook', azw3: 'application/vnd.amazon.ebook',
+        png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', bmp: 'image/bmp',
+    };
+    const extOf = (name) => (/\.([a-z0-9]{1,8})$/i.exec(name || '') || [])[1]?.toLowerCase() || '';
+
+    function originalOf(file, res) {
+        if (res && res.original) return Object.assign({ name: file && file.name }, res.original);
+        if (!file || !file.size || file.size > MAX_ORIGINAL) return null;
+        return { blob: file, type: extOf(file.name) || 'archivo', name: file.name };
+    }
+
+    function fileTitle(b) {
+        return (String(b.title || 'Documento').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').trim() || 'Documento').slice(0, 100);
+    }
+
+    async function openInPixpin() {
+        const b = state.book;
+        if (!b) return;
+        const core = NATIVE_APP && window.__TAURI__.core;
+        if (!core) {
+            // En el navegador no hay PixPin: el PDF se sigue viendo aquí.
+            if (canViewOriginal(b)) return openOriginal();
+            toast('«Abrir en PixPin» funciona en la app de Lectura Veloz (Android y Windows).', { duration: 3500 });
+            return;
+        }
+        if (state.playing) pause();
+        saveProgress(true);
+        const pdf = (b.originalType || (b.pixpin && b.pixpin.tipo)) === 'pdf';
+        const pagina = pdf ? pageOfPos(state.pos) : 0;
+        const t = toast('Abriendo en PixPin…', { duration: 2500 });
+        try {
+            // PixPin de escritorio mandó la ruta de su archivo: se abre ese mismo, con sus marcas.
+            if (!IS_ANDROID_APP && b.pixpin && b.pixpin.ruta) {
+                await core.invoke('pixpin_open', { ruta: b.pixpin.ruta, pagina: pagina || null });
+                return;
+            }
+            if (!state.original && b.hasOriginal && state.assetsReady) await state.assetsReady;
+            const orig = state.original && state.original.blob ? state.original : null;
+            const ext = orig ? (extOf(orig.name || b.originalName) || orig.type || 'pdf') : 'md';
+            const name = orig && (orig.name || b.originalName) ? (orig.name || b.originalName)
+                : fileTitle(b) + '.' + (ext === 'archivo' ? 'bin' : ext);
+            // Sin el archivo (texto pegado, libros de antes): el texto, como Markdown.
+            const blob = orig ? orig.blob : new Blob([b.text.replace(/\uFFFC/g, '')], { type: 'text/markdown' });
+            const bytes = new Uint8Array(await blob.arrayBuffer());
+            const path = await core.invoke('pixpin_stage_file', bytes, { headers: { 'x-name': encodeURIComponent(name) } });
+            if (IS_ANDROID_APP) {
+                await core.invoke('plugin:lv-tts|open_in_pixpin', {
+                    path, mime: MIME_BY_EXT[extOf(name)] || blob.type || 'application/octet-stream',
+                    doc: (b.pixpin && b.pixpin.doc) || null, pagina,
+                });
+            } else {
+                await core.invoke('pixpin_open', { ruta: path, pagina: pagina || null });
+            }
+        } catch (err) {
+            if (t && t.close) t.close();
+            const why = errText(err);
+            console.error('Abrir en PixPin:', why, err);
+            toast(why || 'No se pudo abrir en PixPin.', { error: true, duration: 6000 });
+        }
+    }
+
     /* --- Importación de archivos --- */
     async function importFiles(files) {
         const list = [...files];
@@ -2736,7 +2852,7 @@
                     text: res.text,
                     source: isImg ? 'OCR' : (file.name.split('.').pop() || '').toUpperCase(),
                     images: images.map((x) => ({ blob: x.blob, alt: x.alt || '' })),
-                    original: res.original || null,
+                    original: originalOf(file, res),
                     pageOffsets: res.pageOffsets || null,
                     cover: images.length ? await makeThumb(images[0].blob) : null,
                 });
@@ -3006,11 +3122,12 @@
         let book = (await S.books.all()).find((b) => b.pixpin && b.pixpin.doc === p.doc);
         const isNew = !book;
         if (isNew) {
+            let pixpinFile = null;
             const t = toast(`Abriendo «${p.nombre}» desde PixPin…`, { progress: true });
             try {
                 const bytes = await pixpinBytes(p);
                 const res = await pixpinStep(`No se pudo importar «${p.nombre}»`, () =>
-                    LV.importers.importFile(new File([bytes], p.nombre), (pct, msg) => t.update(pct, msg)));
+                    LV.importers.importFile(pixpinFile = new File([bytes], p.nombre), (pct, msg) => t.update(pct, msg)));
                 t.close();
                 if (!res.text || !res.text.replace(/\uFFFC/g, '').trim()) throw new Error(`No se encontró texto en «${p.nombre}».`);
                 const images = Array.isArray(res.images) ? res.images.filter((x) => x && x.blob) : [];
@@ -3019,7 +3136,7 @@
                     text: res.text,
                     source: 'PixPin',
                     images: images.map((x) => ({ blob: x.blob, alt: x.alt || '' })),
-                    original: res.original || null,
+                    original: originalOf(pixpinFile, res),
                     pageOffsets: res.pageOffsets || null,
                     cover: images.length ? await makeThumb(images[0].blob) : null,
                 });

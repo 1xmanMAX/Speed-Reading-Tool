@@ -78,6 +78,7 @@ window.LV = window.LV || {};
             return book;
         },
         async remove(id) {
+            try { localStorage.removeItem('lv.pos.' + id); } catch (e) { /* sin acceso */ } // copia de la posición (app.js)
             const db = await openDb();
             if (db) {
                 await tx(db, 'readwrite', (s) => s.delete(id));
@@ -100,15 +101,36 @@ window.LV = window.LV || {};
         },
         /**
          * Actualiza algunos campos del libro. Las actualizaciones del mismo libro se
-         * encadenan para que dos guardados simultáneos no se pisen (leer → escribir).
+         * encadenan para que dos guardados simultáneos no se pisen, y cada una lee y
+         * escribe en una sola transacción: si la página se cierra justo después (recargar,
+         * salir de la app), el progreso se guarda entero o no se toca.
          */
         patch(id, fields) {
             const prev = patchQueue.get(id) || Promise.resolve();
             const next = prev.catch(() => {}).then(async () => {
-                const book = await books.get(id);
-                if (!book) return null;
-                Object.assign(book, fields);
-                return books.put(book);
+                const db = await openDb();
+                if (!db) {
+                    const book = memory.get(id);
+                    if (!book) return null;
+                    Object.assign(book, fields);
+                    return book;
+                }
+                return new Promise((resolve, reject) => {
+                    const t = db.transaction(STORE, 'readwrite');
+                    const store = t.objectStore(STORE);
+                    let out = null;
+                    const req = store.get(id);
+                    req.onsuccess = () => {
+                        const book = req.result;
+                        if (!book) return;
+                        Object.assign(book, fields);
+                        store.put(book);
+                        out = book;
+                    };
+                    t.oncomplete = () => resolve(out);
+                    t.onerror = () => reject(t.error);
+                    t.onabort = () => reject(t.error);
+                });
             });
             patchQueue.set(id, next);
             next.finally(() => { if (patchQueue.get(id) === next) patchQueue.delete(id); }).catch(() => {});
@@ -134,6 +156,7 @@ window.LV = window.LV || {};
                 imageCount: hasImages ? images.length : 0,
                 hasOriginal: !!original,
                 originalType: original ? original.type : null,
+                originalName: original ? original.name || null : null,
                 pageOffsets: pageOffsets || null,
                 cover: cover || null,
                 wordCount: LV.text ? LV.text.countWords(text) : text.split(/\s+/).length,

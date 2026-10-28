@@ -1,4 +1,4 @@
-const COMMANDS: &[&str] = &["speak", "stop", "voices", "register_listener", "remove_listener", "vibrate", "copy_uri", "notify_pixpin", "insets", "system_bars"];
+const COMMANDS: &[&str] = &["speak", "stop", "voices", "register_listener", "remove_listener", "vibrate", "copy_uri", "notify_pixpin", "insets", "system_bars", "open_in_pixpin"];
 
 fn main() {
     tauri_plugin::Builder::new(COMMANDS)

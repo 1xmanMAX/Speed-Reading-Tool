@@ -288,6 +288,116 @@ fn pixpin_sync<R: Runtime>(app: AppHandle<R>, progress: PixpinProgress) -> Resul
     }
 }
 
+/// Carpeta de la caché donde se deja el documento que se abre en PixPin
+/// (en Android la comparte el FileProvider del plugin `lv-tts`: `abrir-en-pixpin/`).
+const PIXPIN_STAGE_DIR: &str = "abrir-en-pixpin";
+
+/// Un nombre de archivo seguro: sin carpetas, sin caracteres raros y con extensión.
+fn safe_file_name(raw: &str) -> String {
+    let base = raw.rsplit(['/', '\\']).next().unwrap_or("");
+    let clean: String = base
+        .chars()
+        .map(|c| if c.is_control() || "<>:\"|?*".contains(c) { '_' } else { c })
+        .collect();
+    let clean = clean.trim().trim_matches('.').to_string();
+    let clean: String = clean.chars().take(120).collect();
+    if clean.is_empty() { "documento.txt".into() } else { clean }
+}
+
+/// «Abrir en PixPin», paso 1: guarda en la caché el documento del libro (el cuerpo de
+/// la petición, tal cual) y devuelve su ruta. Cabecera `x-name`: el nombre (codificado
+/// como URL). Cada vez se vacía la carpeta: solo vive el último documento.
+#[tauri::command]
+fn pixpin_stage_file<R: Runtime>(app: AppHandle<R>, request: tauri::ipc::Request<'_>) -> Result<String, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("Falta el documento.".into());
+    };
+    if bytes.len() as u64 > MAX_PIXPIN_FILE {
+        return Err(format!("El documento es demasiado grande (máximo {} MB).", MAX_PIXPIN_FILE / (1024 * 1024)));
+    }
+    let name = request
+        .headers()
+        .get("x-name")
+        .and_then(|v| v.to_str().ok())
+        .map(percent_decode)
+        .unwrap_or_default();
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| format!("No hay carpeta de caché: {e}"))?
+        .join(PIXPIN_STAGE_DIR);
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("No se pudo preparar la carpeta ({}): {e}", dir.display()))?;
+    let path = dir.join(safe_file_name(&name));
+    std::fs::write(&path, bytes).map_err(|e| format!("No se pudo guardar el documento ({}): {e}", path.display()))?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// Descodifica `%XX` (UTF-8); lo que no se entiende se deja como está.
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let Some(v) = std::str::from_utf8(&b[i + 1..i + 3]).ok().and_then(|h| u8::from_str_radix(h, 16).ok()) {
+                out.push(v);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// «Abrir en PixPin», paso 2 (escritorio): `pixpinmax://abrir?ruta=…&pagina=N`, el
+/// mismo «Abrir con PixPin» de su menú: el lector de PixPin con sus marcas. Solo
+/// rutas que mandó PixPin o que se acaban de preparar con `pixpin_stage_file`.
+#[tauri::command]
+fn pixpin_open<R: Runtime>(
+    app: AppHandle<R>,
+    state: tauri::State<'_, PixpinState>,
+    ruta: String,
+    pagina: Option<u32>,
+) -> Result<(), String> {
+    let canon = std::path::PathBuf::from(&ruta)
+        .canonicalize()
+        .map_err(|e| format!("No se encontró el documento ({ruta}): {e}"))?;
+    let staged = app
+        .path()
+        .app_cache_dir()
+        .ok()
+        .and_then(|d| d.join(PIXPIN_STAGE_DIR).canonicalize().ok())
+        .is_some_and(|d| canon.starts_with(d));
+    if !staged && !state.allowed.lock().unwrap().contains(&canon) {
+        return Err("Ese documento no se puede mandar a PixPin.".into());
+    }
+    #[cfg(desktop)]
+    {
+        use tauri_plugin_opener::OpenerExt;
+        let shown = canon.to_string_lossy();
+        let shown = shown.strip_prefix(r"\\?\").unwrap_or(&shown).to_string();
+        let mut url = Url::parse("pixpinmax://abrir").map_err(|e| e.to_string())?;
+        {
+            let mut q = url.query_pairs_mut();
+            q.append_pair("ruta", &shown);
+            if let Some(p) = pagina.filter(|p| *p >= 1) {
+                q.append_pair("pagina", &p.to_string());
+            }
+        }
+        app.opener()
+            .open_url(url.as_str(), None::<&str>)
+            .map_err(|e| format!("No se pudo abrir PixPin. ¿Está instalada? ({e})"))
+    }
+    #[cfg(mobile)]
+    {
+        let _ = (pagina, canon);
+        Err("En el móvil se abre con el plugin nativo (open_in_pixpin).".into())
+    }
+}
+
 /// Immediate quick read (global shortcut): whatever is in the clipboard now.
 #[cfg(desktop)]
 fn quick_read_now<R: Runtime>(app: &AppHandle<R>) {
@@ -713,7 +823,9 @@ pub fn run() {
             set_mini_mode,
             mini_resize,
             pixpin_read_file,
-            pixpin_sync
+            pixpin_sync,
+            pixpin_stage_file,
+            pixpin_open
         ])
         .run(tauri::generate_context!())
         .expect("error al iniciar Lectura Veloz");

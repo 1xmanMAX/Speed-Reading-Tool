@@ -1,6 +1,6 @@
 [package]
 name = "lectura-veloz"
-version = "0.4.1"
+version = "0.5.0"
 description = "Lectura Veloz - lector rápido RSVP"
 authors = ["Lectura Veloz"]
 edition = "2021"
