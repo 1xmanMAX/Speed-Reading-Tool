@@ -63,7 +63,7 @@ En Android (y en cualquier pantalla táctil), el lector se controla con gestos y
 
 - **Microsoft Edge:** ofrece gratis las voces neuronales «Online (Natural)», por ejemplo *Microsoft Elvira Online (Natural)*. La app las detecta y las pone primero.
 - **Windows:** la app de escritorio y los demás navegadores usan las voces locales de Microsoft (Helena, Laura, Pablo, Sabina), que funcionan sin conexión.
-- **Microsoft Azure (opcional):** voces neuronales en cualquier dispositivo. Crea un recurso *Speech* gratuito (nivel F0, unos 500 000 caracteres al mes) en el portal de Azure y pega la clave y la región en *Ajustes → Voz*. La clave se guarda solo en tu dispositivo.
+- **Microsoft Azure (opcional):** voces neuronales en cualquier dispositivo. Crea un recurso *Speech* gratuito (nivel F0, unos 500 000 caracteres al mes) en el portal de Azure y pega la clave y la región en *🎧 → Más voces: Microsoft Azure*. La clave se guarda solo en tu dispositivo.
 - La voz funciona en el modo **Escuchar** y también en cualquier otro modo (botón 🎧 o tecla `V`). El texto avanza sincronizado con la voz.
 
 ## Funciones
@@ -79,7 +79,7 @@ En Android (y en cualquier pantalla táctil), el lector se controla con gestos y
   | Imágenes y capturas | OCR (Indra): español, inglés y unos 50 idiomas de alfabeto latino |
 
   - **PDF escaneados:** las páginas sin texto se pasan por **OCR** automáticamente.
-  - **Voz y resaltado sincronizados:** el resaltado aprende el ritmo real de cada voz y se puede retrasar (*Ajustes → Voz → Sincronía del resaltado*) si la voz va por detrás, algo habitual con auriculares Bluetooth.
+  - **Voz y resaltado sincronizados:** el resaltado aprende el ritmo real de cada voz y se puede retrasar (botón 🎧 del lector → *¿El resaltado va por delante de la voz?*) si la voz va por detrás, algo habitual con auriculares Bluetooth.
   - **OCR con [Indra](https://github.com/datalab-to/indra)** (Datalab), ejecutado en tu dispositivo con ONNX Runtime:
     - endereza páginas torcidas o giradas, respeta las columnas y quita cabeceras y números de página;
     - en nuestras pruebas con páginas escaneadas inclinadas acierta ~99,5 % de las palabras (Tesseract, 2–50 %) y es 2–3 veces más rápido;
@@ -88,7 +88,7 @@ En Android (y en cualquier pantalla táctil), el lector se controla con gestos y
     - Licencias: código Apache 2.0; modelos con licencia OpenRAIL-M modificada (gratis para uso personal, investigación y empresas con menos de 20 M$).
   - **Imágenes del documento:** se conservan las de EPUB, Word, ODT, FB2, Kindle, PowerPoint, HTML, Markdown y PDF.
     - En los modos de página aparecen dentro del texto; al hacer clic se abren a tamaño completo.
-    - En los modos de una palabra se muestran unos segundos al llegar a ellas. La pausa se ajusta en *Ajustes → Imágenes*.
+    - En los modos de una palabra se muestran unos segundos al llegar a ellas. Se quedan 2 segundos en pantalla.
   - **Ver el documento en PixPin** (botón 📄, tecla `O` o «En PixPin» en el panel rápido): en la app de Android y Windows, el PDF, Word, EPUB, Markdown o texto se abre en **PixPin Pro**, que es la app de previsualizar (ver `docs/PIXPIN.md`). Si el libro vino de PixPin, se abre su mensaje con el marcador verde.
   - **En el navegador**, los PDF se siguen viendo dentro (páginas reales, zoom y modo nocturno; *Leer desde esta página* continúa la lectura rápida desde ahí).
   - También puedes pegar texto o capturas con Ctrl+V desde cualquier pantalla.
@@ -98,7 +98,6 @@ En Android (y en cualquier pantalla táctil), el lector se controla con gestos y
   - Detalles en [docs/PIXPIN.md](docs/PIXPIN.md).
 - **Ritmo inteligente**:
   - Pausa más en comas, puntos, finales de párrafo, palabras largas y números.
-  - Aceleración progresiva opcional.
   - Arranque suave al reanudar.
   - Al pausar, retrocede hasta el inicio de la frase.
 - **Test de comprensión** al terminar: genera preguntas de completar a partir del propio texto y calcula las **PPM efectivas**, es decir, la velocidad multiplicada por la comprensión.
@@ -117,8 +116,11 @@ En Android (y en cualquier pantalla táctil), el lector se controla con gestos y
 - **Apariencia**:
   - 5 temas (Automático, Oscuro, Claro, Sepia y OLED), con contraste verificado según WCAG AA.
   - Fuentes Atkinson Hyperlegible, Inter, Literata y Lexend.
-  - Tamaño, interlineado y ancho de columna ajustables.
-  - Modo inmersivo.
+  - Tamaño del texto ajustable; los controles se ocultan solos mientras lees.
+- **Pocas opciones, cada una donde se usa**:
+  - En el lector: **Aa** (tamaño, tema y letra), **🎧** (voz, velocidad de la voz y sincronía), el menú de modos y la velocidad en la barra de abajo. En el móvil, todo eso está también en el panel rápido (mantener pulsado).
+  - *Ajustes* solo guarda lo personal: velocidad, tamaños, voz, tema y letra.
+  - Lo demás (pausas inteligentes, retroceso al reanudar, guías de enfoque, interlineado, imágenes…) usa valores recomendados fijos.
 - **Atajos de teclado**: pulsa `?` dentro de la app para verlos todos.
   - `Espacio`: reproducir o pausar.
   - `←` / `→`: palabra anterior o siguiente.

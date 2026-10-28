@@ -74,7 +74,28 @@
         { id: 'midnight', name: 'OLED', bg: '#000000', fg: '#ffb454' },
     ];
 
-    const settings = S.settings.load(DEFAULTS);
+    // Lo que no se pregunta: valores recomendados (los de la mayoría de lectores y de los
+    // estudios de RSVP). Antes eran ajustes; ahora son fijos para que Ajustes sea corto.
+    const FIXED = {
+        rampUp: false,          // el arranque suave de las 3 primeras palabras ya está en unitDuration
+        rampSeconds: 30,
+        smartPause: true,       // más tiempo en puntuación, palabras largas y números
+        rewindOnPause: true,    // al reanudar, vuelve al inicio de la frase
+        countdown: false,
+        sessionLimit: 0,
+        immersive: true,        // los controles se ocultan al leer y vuelven al mover o tocar
+        lineHeight: 1.65,
+        columnWidth: 65,
+        showOrp: true,
+        showGuides: true,
+        showContext: true,
+        dimInactive: true,
+        bionicRatio: 0.45,
+        showImages: true,
+        imagePause: 2,
+    };
+
+    const settings = Object.assign(S.settings.load(DEFAULTS), FIXED);
     if (!MODE[settings.mode]) settings.mode = DEFAULTS.mode;
 
     /* =====================================================
@@ -296,6 +317,8 @@
             f.hidden = String(settings[k]) !== v;
         });
         $$('.theme-swatch').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.theme === settings.theme)));
+        $$('#font-picker [data-font]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.font === settings.font)));
+        if (openPop) syncPopSize();
         syncSpeedLabel();
         el.chunkValue.textContent = settings.chunkSize;
         el.voiceBtn.classList.toggle('is-on', voiceActive());
@@ -386,6 +409,11 @@
             if (b) setSetting('theme', b.dataset.theme);
         });
 
+        $('#font-picker').addEventListener('click', (e) => {
+            const b = e.target.closest('[data-font]');
+            if (b) setSetting('font', b.dataset.font);
+        });
+
         $$('[data-setting]').forEach((input) => {
             const key = input.dataset.setting;
             const handler = () => {
@@ -399,8 +427,8 @@
         });
 
         $('#reset-settings').addEventListener('click', () => {
-            const keep = { mode: settings.mode, azureKey: settings.azureKey, azureRegion: settings.azureRegion };
-            Object.assign(settings, DEFAULTS, keep);
+            const keep = { mode: settings.mode, azureKey: settings.azureKey, azureRegion: settings.azureRegion, favs: settings.favs };
+            Object.assign(settings, DEFAULTS, FIXED, keep);
             S.settings.save(settings);
             applyAppearance();
             syncSettingsUI();
@@ -1455,8 +1483,66 @@
         syncModeUI();
     }
 
+    /* --- Aa y 🎧: ventanas pequeñas del lector (en táctil, hojas desde abajo) --- */
+    let openPop = null;
+
+    // Los bloques de voz y apariencia existen una vez y se mueven a donde se abren
+    // (Ajustes o la ventana del lector), así no hay controles duplicados.
+    function placeBlock(id, slot) {
+        const blk = $('#' + id);
+        const dest = $(`[data-slot="${slot}"]`);
+        if (blk && dest && blk.parentNode !== dest) dest.appendChild(blk);
+    }
+
+    function syncPopSize() {
+        const sz = sizeInfo();
+        const r = $('#pop-size');
+        r.min = sz.min;
+        r.max = sz.max;
+        r.step = sz.step;
+        r.value = sz.val;
+        $('#pop-size-val').textContent = `${sz.val} px`;
+        paintRange(r);
+    }
+
+    function togglePop(name, force) {
+        const pop = $('#pop-' + name);
+        if (!pop) return;
+        const open = force === undefined ? pop.hidden : force;
+        if (open) {
+            if (openPop && openPop !== name) togglePop(openPop, false);
+            if (!el.modeMenu.hidden) toggleModeMenu(false);
+            if (name === 'text') { placeBlock('look-block', 'look-pop'); syncPopSize(); }
+            if (name === 'voice') { placeBlock('voice-block', 'voice-pop'); populateVoices(); }
+            syncSettingsUI();
+            pop.hidden = false;
+            openPop = name;
+            hud.show(true);
+        } else {
+            pop.hidden = true;
+            if (openPop === name) openPop = null;
+            hud.poke();
+        }
+        const btn = name === 'text' ? $('#btn-text') : el.voiceBtn;
+        btn.setAttribute('aria-expanded', String(open));
+    }
+
+    function bindPops() {
+        $('#pop-size').addEventListener('input', (e) => {
+            const v = Number(e.target.value);
+            setSetting(sizeInfo().key, v);
+            $('#pop-size-val').textContent = `${v} px`;
+            paintRange(e.target);
+        });
+        $$('[data-pop-close]').forEach((b) => b.addEventListener('click', () => togglePop(b.closest('.pop').id.slice(4), false)));
+        document.addEventListener('pointerdown', (e) => {
+            if (openPop && !e.target.closest('.pop, #btn-text, #btn-voice, #sheet-text, #sheet-voice')) togglePop(openPop, false);
+        });
+    }
+
     function toggleModeMenu(force) {
         const open = force === undefined ? el.modeMenu.hidden : force;
+        if (open && openPop) togglePop(openPop, false);
         el.modeMenu.hidden = !open;
         el.modeBtn.setAttribute('aria-expanded', String(open));
         if (open) hud.show(true);
@@ -1565,7 +1651,7 @@
         let pinned = false;
         const reader = $('#view-reader');
         const hide = () => {
-            if (!state.playing || pinned || !el.modeMenu.hidden || !settings.immersive) return;
+            if (!state.playing || pinned || !el.modeMenu.hidden || openPop || !settings.immersive) return;
             reader.classList.add('hud-hidden');
         };
         return {
@@ -2018,11 +2104,10 @@
                 syncSheet();
             }
         });
-        $('#sheet-voice').addEventListener('click', () => { toggleVoice(); syncSheet(); });
+        $('#sheet-voice').addEventListener('click', () => { closeSheet(); togglePop('voice', true); });
         $('#sheet-original').addEventListener('click', () => { closeSheet(); openInPixpin(); });
-        $('#sheet-theme').addEventListener('click', cycleTheme);
+        $('#sheet-text').addEventListener('click', () => { closeSheet(); togglePop('text', true); });
         $('#sheet-gestures').addEventListener('click', () => { closeSheet(); $('#gesture-coach').hidden = false; });
-        $('#sheet-settings').addEventListener('click', () => { closeSheet(); openPanel('settings'); });
     }
 
     /* =====================================================
@@ -2342,12 +2427,13 @@
         $('#chunk-down').addEventListener('click', () => setSetting('chunkSize', clamp(settings.chunkSize - 1, 1, 8)));
         $('#chunk-up').addEventListener('click', () => setSetting('chunkSize', clamp(settings.chunkSize + 1, 1, 8)));
         $('#btn-fullscreen').addEventListener('click', toggleFullscreen);
-        $('#theme-cycle').addEventListener('click', cycleTheme);
         $('#go-home').addEventListener('click', showHome);
         $('#reader-back').addEventListener('click', showHome);
         $('#btn-original').addEventListener('click', openInPixpin);
         $('#original-read').addEventListener('click', readFromOriginalPage);
-        el.voiceBtn.addEventListener('click', toggleVoice);
+        el.voiceBtn.addEventListener('click', () => togglePop('voice'));
+        $('#btn-text').addEventListener('click', () => togglePop('text'));
+        bindPops();
 
         // Los controles aparecen al mover el ratón o tocar la pantalla
         ['pointermove', 'pointerdown', 'wheel'].forEach((ev) => el.reader.addEventListener(ev, () => hud.poke(), { passive: true }));
@@ -2456,6 +2542,7 @@
         if (inReader) hud.poke();
         if (k === 'Escape') {
             if (!$('#quick-sheet').hidden) closeSheet();
+            else if (openPop) togglePop(openPop, false);
             else if (!el.modeMenu.hidden) toggleModeMenu(false);
             else if (state.pdfView) closeOriginal();
             else if (!el.scrim.hidden) closePanels();
@@ -2477,6 +2564,7 @@
         else if (k === ']') setSetting('chunkSize', clamp(settings.chunkSize + 1, 1, 8));
         else if (k === 'f' || k === 'F') toggleFullscreen();
         else if (k === 'm' || k === 'M') toggleModeMenu();
+        else if (k === 'a' || k === 'A') togglePop('text');
         else if (k === 'v' || k === 'V') toggleVoice();
         else if (k === 'p' || k === 'P') openMini();
         else if ((k === 'o' || k === 'O') && state.book) openInPixpin();
@@ -2509,6 +2597,13 @@
         if (!p) return;
         if (name === 'library') renderLibrary();
         if (name === 'stats') renderStats();
+        if (name === 'settings') {
+            if (openPop) togglePop(openPop, false);
+            placeBlock('voice-block', 'voice-settings');
+            placeBlock('look-block', 'look-settings');
+            populateVoices();
+            syncSettingsUI();
+        }
         p.hidden = false;
         el.scrim.hidden = false;
         const focusable = p.querySelector('input, button');

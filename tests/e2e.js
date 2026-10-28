@@ -165,10 +165,25 @@ async function openSample(page) {
     const mid = await state(page);
     check('Clic en la barra de progreso salta a la mitad', Math.abs(mid.pos / mid.n - 0.5) < 0.05, mid);
 
-    // Paneles
-    await page.locator('[data-open="settings"]:visible').first().click();
+    // Aa: tamaño, tema y letra junto al texto
+    await page.click('#btn-text');
+    await page.waitForTimeout(300);
+    await shot(page, '11-texto');
+    const sizeBefore = await page.evaluate(() => LV.app.settings.rsvpSize);
+    await page.evaluate(() => { const r = document.querySelector('#pop-size'); r.value = Number(r.value) + 10; r.dispatchEvent(new Event('input', { bubbles: true })); });
+    await page.click('#font-picker [data-font="literata"]');
+    const aa = await page.evaluate(() => ({ size: LV.app.settings.rsvpSize, font: LV.app.settings.font, visible: !document.querySelector('#pop-text').hidden }));
+    check('Aa: cambia el tamaño y la letra desde el lector', aa.visible && aa.size === sizeBefore + 10 && aa.font === 'literata', aa);
+    await page.keyboard.press('Escape');
+    check('Aa: Esc la cierra', await page.evaluate(() => document.querySelector('#pop-text').hidden));
+    await page.evaluate((v) => { LV.app.setSetting('rsvpSize', v); LV.app.setSetting('font', 'atkinson'); }, sizeBefore);
+
+    // Ajustes: solo lo personal
+    await page.keyboard.press('s');
     await page.waitForTimeout(400);
-    await shot(page, '11-ajustes');
+    await shot(page, '11b-ajustes');
+    const nSettings = await page.evaluate(() => document.querySelectorAll('#panel-settings [data-setting], #panel-settings select, #panel-settings .theme-picker, #panel-settings .font-picker').length);
+    check('Ajustes: pocas opciones (velocidad, tamaños, voz, tema y letra)', nSettings <= 14, nSettings);
     await page.keyboard.press('Escape');
     await page.keyboard.press('?');
     await page.waitForTimeout(300);
@@ -220,10 +235,10 @@ async function openSample(page) {
     check('Voz: el resaltado espera el retraso elegido (no se adelanta a la voz)', early === 0 && later > 3, { early, later });
     const voices = await page.$$eval('#voice-select option', (o) => o.map((x) => x.textContent));
     check('Lista las voces de Microsoft', voices.some((v) => /Microsoft/.test(v)), voices);
-    await page.locator('[data-open="settings"]:visible').first().click();
-    await page.evaluate(() => document.querySelector('#voice-select').scrollIntoView({ block: 'center' }));
+    await page.click('#btn-voice');
     await page.waitForTimeout(300);
-    await shot(page, '16d-ajustes-voz');
+    await shot(page, '16d-voz');
+    check('🎧: la voz se elige desde el lector', await page.evaluate(() => !document.querySelector('#pop-voice').hidden && !!document.querySelector('#pop-voice #voice-select')));
     await page.keyboard.press('Escape');
 
     // Ventana flotante (Document Picture-in-Picture en Chrome/Edge)
@@ -420,7 +435,7 @@ async function openSample(page) {
     }
     const overflow = await mob.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
     check('Sin desplazamiento horizontal en móvil', !overflow);
-    await mob.locator('[data-open="settings"]:visible').first().click();
+    await mob.keyboard.press('s');
     await mob.waitForTimeout(400);
     await shot(mob, '34-movil-ajustes');
     await mob.context().close();

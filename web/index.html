@@ -72,8 +72,6 @@
                 <button class="icon-btn" id="open-training" title="Entrenamiento"><svg><use href="#i-target"/></svg></button>
                 <button class="icon-btn" data-open="library" title="Biblioteca (B)"><svg><use href="#i-library"/></svg></button>
                 <button class="icon-btn" data-open="stats" title="Estadísticas"><svg><use href="#i-stats"/></svg></button>
-                <button class="icon-btn" id="theme-cycle" title="Cambiar tema (T)"><svg><use href="#i-sun"/></svg></button>
-                <button class="icon-btn" data-open="shortcuts" title="Atajos de teclado (?)"><svg><use href="#i-keyboard"/></svg></button>
                 <button class="icon-btn" data-open="settings" title="Ajustes (S)"><svg><use href="#i-settings"/></svg></button>
             </nav>
         </header>
@@ -129,15 +127,29 @@
                         <span class="mode-dot"></span><span id="mode-name">Enfoque</span><svg class="chev"><use href="#i-chevron"/></svg>
                     </button>
                     <button class="hud-btn" id="btn-original" title="Abrir el documento en PixPin (O)"><svg><use href="#i-doc"/></svg></button>
-                    <button class="hud-btn" id="btn-voice" title="Leer en voz alta (V)"><svg><use href="#i-headphones"/></svg></button>
+                    <button class="hud-btn" id="btn-voice" title="Voz (V activa o desactiva)" aria-haspopup="dialog" aria-expanded="false"><svg><use href="#i-headphones"/></svg></button>
                     <button class="hud-btn" id="btn-pip" title="Ventana flotante (P)"><svg><use href="#i-pip"/></svg></button>
-                    <button class="hud-btn" data-open="settings" title="Ajustes (S)"><svg><use href="#i-settings"/></svg></button>
+                    <button class="hud-btn hud-aa" id="btn-text" title="Texto: tamaño, tema y letra (A)" aria-haspopup="dialog" aria-expanded="false">Aa</button>
                     <button class="hud-btn" id="btn-fullscreen" title="Pantalla completa (F)"><svg><use href="#i-expand"/></svg></button>
                 </div>
             </header>
 
             <div class="mode-menu" id="mode-menu" hidden>
                 <div class="mode-grid" id="mode-bar" role="menu" aria-label="Modo de lectura"></div>
+            </div>
+
+            <!-- Aa y 🎧: lo que se ajusta mientras se lee, junto al texto -->
+            <div class="pop" id="pop-text" role="dialog" aria-label="Texto" hidden>
+                <div class="pop-head"><strong>Texto</strong><button class="icon-btn" data-pop-close title="Cerrar"><svg><use href="#i-close"/></svg></button></div>
+                <label class="field">
+                    <span class="field-label">Tamaño <output id="pop-size-val"></output></span>
+                    <div class="size-row"><span class="size-a size-a-sm">A</span><input type="range" id="pop-size"><span class="size-a size-a-lg">A</span></div>
+                </label>
+                <div class="block-slot" data-slot="look-pop"></div>
+            </div>
+            <div class="pop" id="pop-voice" role="dialog" aria-label="Voz" hidden>
+                <div class="pop-head"><strong>Voz</strong><button class="icon-btn" data-pop-close title="Cerrar"><svg><use href="#i-close"/></svg></button></div>
+                <div class="block-slot" data-slot="voice-pop"></div>
             </div>
 
             <section class="stage" id="stage" aria-live="off">
@@ -266,9 +278,8 @@
                 <div class="sheet-actions">
                     <button class="sheet-act" id="sheet-voice"><svg><use href="#i-headphones"/></svg><span>Voz</span></button>
                     <button class="sheet-act" id="sheet-original" title="Abrir el documento en PixPin"><svg><use href="#i-doc"/></svg><span>En PixPin</span></button>
-                    <button class="sheet-act" id="sheet-theme"><svg><use href="#i-sun"/></svg><span>Tema</span></button>
+                    <button class="sheet-act" id="sheet-text"><span class="sheet-aa">Aa</span><span>Texto</span></button>
                     <button class="sheet-act" id="sheet-gestures"><svg><use href="#i-spark"/></svg><span>Gestos</span></button>
-                    <button class="sheet-act" id="sheet-settings"><svg><use href="#i-settings"/></svg><span>Ajustes</span></button>
                 </div>
             </section>
 
@@ -341,170 +352,100 @@
             <h2>Ajustes</h2>
             <button class="icon-btn" data-close title="Cerrar"><svg><use href="#i-close"/></svg></button>
         </div>
+        <!-- Solo lo personal. Lo demás tiene un valor recomendado fijo (FIXED en app.js) o vive
+             donde se usa: Aa y 🎧 en el lector, palabras por bloque en la barra del lector. -->
         <div class="drawer-body settings" id="settings-body">
-            <fieldset>
-                <legend>Velocidad</legend>
+            <section class="set-group">
+                <h3>Lectura</h3>
                 <label class="field">
-                    <span class="field-label">Palabras por minuto <output data-for="wpm"></output></span>
+                    <span class="field-label">Velocidad <output data-for="wpm"></output></span>
                     <input type="range" min="60" max="1500" step="10" data-setting="wpm">
                 </label>
                 <label class="field">
-                    <span class="field-label">Palabras por bloque <output data-for="chunkSize"></output></span>
-                    <input type="range" min="1" max="8" step="1" data-setting="chunkSize">
-                </label>
-                <label class="switch-field">
-                    <span><strong>Aceleración progresiva</strong><small>Empieza más lento y sube hasta tu velocidad objetivo.</small></span>
-                    <input type="checkbox" class="switch" data-setting="rampUp">
-                </label>
-                <label class="field" data-depends="rampUp">
-                    <span class="field-label">Duración de la aceleración <output data-for="rampSeconds"></output></span>
-                    <input type="range" min="5" max="120" step="5" data-setting="rampSeconds">
-                </label>
-                <label class="switch-field">
-                    <span><strong>Pausa inteligente</strong><small>Más tiempo en puntuación, palabras largas y números.</small></span>
-                    <input type="checkbox" class="switch" data-setting="smartPause">
-                </label>
-                <label class="switch-field">
-                    <span><strong>Retroceder al pausar</strong><small>Vuelve unas palabras atrás al reanudar.</small></span>
-                    <input type="checkbox" class="switch" data-setting="rewindOnPause">
-                </label>
-                <label class="switch-field">
-                    <span><strong>Cuenta atrás al iniciar</strong><small>3 · 2 · 1 antes de arrancar.</small></span>
-                    <input type="checkbox" class="switch" data-setting="countdown">
-                </label>
-                <label class="switch-field">
-                    <span><strong>Modo inmersivo</strong><small>Oculta los controles mientras lees.</small></span>
-                    <input type="checkbox" class="switch" data-setting="immersive">
+                    <span class="field-label"><span>Tamaño de la palabra <small>una palabra a la vez</small></span> <output data-for="rsvpSize"></output></span>
+                    <input type="range" min="28" max="120" step="2" data-setting="rsvpSize">
                 </label>
                 <label class="field">
-                    <span class="field-label">Límite de sesión <output data-for="sessionLimit"></output></span>
-                    <input type="range" min="0" max="60" step="1" data-setting="sessionLimit">
+                    <span class="field-label"><span>Tamaño del texto <small>modos de página</small></span> <output data-for="pageSize"></output></span>
+                    <input type="range" min="14" max="32" step="1" data-setting="pageSize">
                 </label>
-            </fieldset>
+            </section>
+            <section class="set-group">
+                <h3>Voz</h3>
+                <div class="block-slot" data-slot="voice-settings"></div>
+            </section>
+            <section class="set-group">
+                <h3>Apariencia</h3>
+                <div class="block-slot" data-slot="look-settings"></div>
+            </section>
+            <div class="settings-foot">
+                <button class="link-btn hide-touch" data-open="shortcuts"><svg><use href="#i-keyboard"/></svg> Atajos de teclado</button>
+                <button class="link-btn" id="reset-settings">Restablecer</button>
+            </div>
+            <p class="fine">Todo se guarda en este dispositivo; nada se envía a ningún servidor.</p>
+        </div>
+    </aside>
 
-            <fieldset>
-                <legend>Voz</legend>
-                <label class="switch-field">
-                    <span><strong>Leer en voz alta</strong><small>La voz lee mientras el texto avanza sincronizado, en cualquier modo.</small></span>
-                    <input type="checkbox" class="switch" data-setting="voice">
+    <!-- Bloques que se usan en Ajustes y en el lector (se mueven donde se abren) -->
+    <div hidden>
+        <div class="block" id="voice-block">
+            <label class="switch-field switch-big">
+                <span><strong>Leer en voz alta</strong><small>Una voz lee y el texto se resalta a la vez, en cualquier modo.</small></span>
+                <input type="checkbox" class="switch" data-setting="voice">
+            </label>
+            <label class="field">
+                <span class="field-label">Voz</span>
+                <select class="input" id="voice-select"></select>
+            </label>
+            <label class="field">
+                <span class="field-label">Velocidad de la voz <output data-for="voiceRate"></output></span>
+                <input type="range" min="0.5" max="3" step="0.1" data-setting="voiceRate">
+            </label>
+            <div class="btn-row"><button class="btn btn-sm" id="voice-test"><svg><use href="#i-play"/></svg> Probar voz</button></div>
+            <details class="more">
+                <summary>¿El resaltado va por delante de la voz?</summary>
+                <label class="field">
+                    <span class="field-label">Retrasar el resaltado <output data-for="voiceDelay"></output></span>
+                    <input type="range" min="0" max="1500" step="50" data-setting="voiceDelay">
+                    <small class="fine">Con auriculares Bluetooth suele hacer falta 300–600 ms.</small>
                 </label>
+            </details>
+            <details class="more">
+                <summary>Más voces: Microsoft Azure</summary>
                 <label class="field">
                     <span class="field-label">Motor de voz</span>
                     <select class="input" data-setting="voiceProvider">
-                        <option value="system">Voces del sistema (Microsoft en Windows y Edge)</option>
+                        <option value="system">Voces del dispositivo</option>
                         <option value="azure">Microsoft Azure · voces neuronales</option>
                     </select>
                 </label>
-                <label class="field">
-                    <span class="field-label">Voz</span>
-                    <select class="input" id="voice-select"></select>
-                </label>
-                <label class="field">
-                    <span class="field-label">Velocidad de la voz <output data-for="voiceRate"></output></span>
-                    <input type="range" min="0.5" max="3" step="0.1" data-setting="voiceRate">
-                </label>
-                <label class="field">
-                    <span class="field-label">Sincronía del resaltado: retrasar <output data-for="voiceDelay"></output></span>
-                    <input type="range" min="0" max="1500" step="50" data-setting="voiceDelay">
-                    <small class="fine">Si el texto resaltado va por delante de la voz, súbelo (con auriculares Bluetooth suele hacer falta 300–600 ms). Si va por detrás, bájalo.</small>
-                </label>
                 <div class="field" data-show-if="voiceProvider=azure">
                     <span class="field-label">Clave de Azure Speech</span>
-                    <input type="password" class="input" data-setting="azureKey" placeholder="Pega tu clave (se guarda solo en este dispositivo)" autocomplete="off">
+                    <input type="password" class="input" data-setting="azureKey" placeholder="Pega tu clave (se guarda solo aquí)" autocomplete="off">
                     <span class="field-label">Región</span>
                     <input type="text" class="input" data-setting="azureRegion" placeholder="p. ej. westeurope, eastus">
                     <p class="fine">Crea un recurso gratuito «Speech» en el portal de Azure (nivel F0) y copia la clave y la región.</p>
                 </div>
-                <div class="btn-row">
-                    <button class="btn btn-sm" id="voice-test">Probar voz</button>
-                </div>
-                <p class="fine" id="voice-hint">Consejo: en Microsoft Edge aparecen las voces «Online (Natural)» de Microsoft, las más realistas.</p>
-            </fieldset>
-
-            <fieldset>
-                <legend>Apariencia</legend>
-                <div class="field">
-                    <span class="field-label">Tema</span>
-                    <div class="theme-picker" data-setting-group="theme"></div>
-                </div>
-                <label class="field">
-                    <span class="field-label">Tipografía</span>
-                    <select class="input" data-setting="font">
-                        <option value="atkinson">Atkinson Hyperlegible (máxima legibilidad)</option>
-                        <option value="inter">Inter (sans moderna)</option>
-                        <option value="literata">Literata (serif de lectura)</option>
-                        <option value="lexend">Lexend (lectura asistida)</option>
-                    </select>
-                </label>
-                <label class="field">
-                    <span class="field-label">Tamaño palabra enfocada <output data-for="rsvpSize"></output></span>
-                    <input type="range" min="28" max="120" step="2" data-setting="rsvpSize">
-                </label>
-                <label class="field">
-                    <span class="field-label">Tamaño texto de página <output data-for="pageSize"></output></span>
-                    <input type="range" min="14" max="32" step="1" data-setting="pageSize">
-                </label>
-                <label class="field">
-                    <span class="field-label">Interlineado <output data-for="lineHeight"></output></span>
-                    <input type="range" min="1.3" max="2.2" step="0.05" data-setting="lineHeight">
-                </label>
-                <label class="field">
-                    <span class="field-label">Ancho de columna <output data-for="columnWidth"></output></span>
-                    <input type="range" min="40" max="90" step="1" data-setting="columnWidth">
-                </label>
-            </fieldset>
-
-            <fieldset>
-                <legend>Modo enfoque</legend>
-                <label class="switch-field">
-                    <span><strong>Letra de enfoque (ORP)</strong><small>Resalta el punto óptimo de reconocimiento.</small></span>
-                    <input type="checkbox" class="switch" data-setting="showOrp">
-                </label>
-                <label class="switch-field">
-                    <span><strong>Guías de fijación</strong><small>Marcas que indican dónde fijar la vista.</small></span>
-                    <input type="checkbox" class="switch" data-setting="showGuides">
-                </label>
-                <label class="switch-field">
-                    <span><strong>Mostrar contexto</strong><small>Palabras anterior y siguiente en tenue.</small></span>
-                    <input type="checkbox" class="switch" data-setting="showContext">
-                </label>
-            </fieldset>
-
-            <fieldset>
-                <legend>Imágenes</legend>
-                <label class="switch-field">
-                    <span><strong>Mostrar imágenes</strong><small>Ilustraciones, fotos y gráficos del documento dentro de la lectura.</small></span>
-                    <input type="checkbox" class="switch" data-setting="showImages">
-                </label>
-                <label class="field" data-depends="showImages">
-                    <span class="field-label">Pausa en cada imagen (modos palabra) <output data-for="imagePause"></output></span>
-                    <input type="range" min="0.5" max="6" step="0.5" data-setting="imagePause">
-                </label>
-            </fieldset>
-
-            <fieldset>
-                <legend>Modos de página</legend>
-                <label class="switch-field">
-                    <span><strong>Atenuar texto no activo</strong><small>Ayuda a mantener la vista en la guía.</small></span>
-                    <input type="checkbox" class="switch" data-setting="dimInactive">
-                </label>
-                <label class="field">
-                    <span class="field-label">Intensidad biónica <output data-for="bionicRatio"></output></span>
-                    <input type="range" min="0.2" max="0.7" step="0.05" data-setting="bionicRatio">
-                </label>
-
-            </fieldset>
-
-            <fieldset>
-                <legend>Datos</legend>
-                <div class="btn-row">
-                    <button class="btn btn-sm" id="reset-settings">Restablecer ajustes</button>
-                    <button class="btn btn-sm btn-danger" id="clear-stats">Borrar estadísticas</button>
-                </div>
-                <p class="fine">Todo se guarda localmente en tu navegador. Nada se envía a ningún servidor.</p>
-            </fieldset>
+            </details>
+            <p class="fine" id="voice-hint"></p>
         </div>
-    </aside>
+
+        <div class="block" id="look-block">
+            <div class="field">
+                <span class="field-label">Tema</span>
+                <div class="theme-picker" data-setting-group="theme"></div>
+            </div>
+            <div class="field">
+                <span class="field-label">Letra</span>
+                <div class="font-picker" id="font-picker">
+                    <button type="button" data-font="atkinson" style="font-family:'Atkinson Hyperlegible Next','Atkinson Hyperlegible',sans-serif"><b>Aa</b>Legible</button>
+                    <button type="button" data-font="inter" style="font-family:Inter,sans-serif"><b>Aa</b>Moderna</button>
+                    <button type="button" data-font="literata" style="font-family:Literata,Georgia,serif"><b>Aa</b>Libro</button>
+                    <button type="button" data-font="lexend" style="font-family:Lexend,sans-serif"><b>Aa</b>Lexend</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <aside class="drawer drawer-right" id="panel-stats" aria-label="Estadísticas" hidden>
         <div class="drawer-head">
@@ -512,6 +453,7 @@
             <button class="icon-btn" data-close title="Cerrar"><svg><use href="#i-close"/></svg></button>
         </div>
         <div class="drawer-body" id="stats-body"></div>
+        <div class="drawer-foot"><button class="link-btn link-danger" id="clear-stats">Borrar estadísticas</button></div>
     </aside>
 
     <!-- ===== Diálogos ===== -->
@@ -549,6 +491,7 @@
                 <dt><kbd>+</kbd> <kbd>−</kbd></dt><dd>Tamaño del texto</dd>
                 <dt><kbd>Ctrl</kbd>+<kbd>V</kbd></dt><dd>Pegar texto o captura (OCR) para leerla</dd>
                 <dt><kbd>F</kbd></dt><dd>Pantalla completa</dd>
+                <dt><kbd>A</kbd></dt><dd>Texto: tamaño, tema y letra</dd>
                 <dt><kbd>T</kbd></dt><dd>Cambiar tema</dd>
                 <dt><kbd>S</kbd> · <kbd>B</kbd></dt><dd>Ajustes · Biblioteca</dd>
                 <dt><kbd>Inicio</kbd></dt><dd>Volver al principio</dd>
