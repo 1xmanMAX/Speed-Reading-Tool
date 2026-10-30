@@ -3,3 +3,4 @@ target/
 dist/
 .DS_Store
 tests/screenshots/
+web/vendor/

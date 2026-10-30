@@ -21,12 +21,15 @@
   window.LV = window.LV || {};
   var LV = window.LV;
 
+  // Las librerías van dentro de la app (web/vendor, scripts/vendor.mjs): funciona sin conexión y
+  // no se pide nada a terceros. Solo Tesseract (respaldo del OCR en el navegador) viene de una CDN.
+  var VENDOR = new URL('../vendor/', (document.currentScript && document.currentScript.src) || location.href).href;
   var CDN = {
-    jszip: 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
-    pdfjs: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
-    pdfWorker: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
+    jszip: VENDOR + 'jszip/jszip.min.js',
+    pdfjs: VENDOR + 'pdfjs/pdf.min.js',
+    pdfWorker: VENDOR + 'pdfjs/pdf.worker.min.js',
     tesseract: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js',
-    mammoth: 'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js'
+    mammoth: VENDOR + 'mammoth/mammoth.browser.min.js'
   };
 
   var EXT = {
@@ -1802,7 +1805,6 @@
   var SCRIPT_URL = (document.currentScript && document.currentScript.src) || location.href;
   var OCR_MAX_SIDE = 4000;
 
-  function mb(bytes) { return (bytes / 1048576).toFixed(1).replace('.', ','); }
 
   async function sourceCanvas(source) {
     if (source && source.getContext) return source;
@@ -1883,7 +1885,7 @@
     return call({ type: 'init' }, function (m) {
       if (!onStatus) return;
       if (m.stage === 'download') {
-        onStatus('Descargando OCR Indra (' + mb(m.loaded) + ' de ' + mb(m.total) + ' MB, solo la primera vez)…');
+        onStatus('Cargando OCR Indra…');
       } else if (m.stage === 'load') onStatus('Cargando OCR Indra…');
       else if (m.stage === 'prepare') onStatus('Preparando OCR Indra…');
     }).then(function () { return engine; }, function (err) {
@@ -1921,7 +1923,10 @@
       if (onStatus) onStatus('Cargando OCR alternativo…');
       return createTesseractEngine(onStatus).then(function (t) { inner = t; return t; });
     }
-    var start = LV.ocrEngine === 'tesseract' ? createTesseractEngine(onStatus) : createIndraEngine(onStatus).catch(fallback);
+    // En la app (Android, Windows…) no hay respaldo: Indra va dentro y Tesseract se bajaría de una CDN.
+    var native = !!window.__TAURI__;
+    var start = LV.ocrEngine === 'tesseract' && !native ? createTesseractEngine(onStatus)
+      : createIndraEngine(onStatus).catch(native ? function (e) { throw e; } : fallback);
     return start.then(function (e) {
       inner = e;
       return {
@@ -1931,7 +1936,7 @@
             LV.lastOcrEngine = inner.name; // para depurar y para las pruebas
             return res;
           }).catch(function (err) {
-            if (inner.name !== 'indra') throw err;
+            if (inner.name !== 'indra' || native) throw err;
             try { inner.terminate(); } catch (e2) { /* nada */ }
             return fallback(err).then(function (t) {
               return t.recognize(source, onProgress).then(function (res) { LV.lastOcrEngine = t.name; return res; });

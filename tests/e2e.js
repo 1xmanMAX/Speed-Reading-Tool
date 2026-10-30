@@ -18,6 +18,7 @@ const PORT = 8790;
 const TYPES = {
     '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
     '.png': 'image/png', '.webmanifest': 'application/manifest+json', '.json': 'application/json',
+    '.mjs': 'text/javascript; charset=utf-8', '.wasm': 'application/wasm', '.woff2': 'font/woff2', '.onnx': 'application/octet-stream',
 };
 
 function serve() {
@@ -77,10 +78,14 @@ const FAKE_SPEECH = () => {
     window.SpeechSynthesisUtterance = U;
 };
 
+// Peticiones a otros servidores: la app no debe hacer ninguna (todo va en web/vendor)
+const external = new Set();
+
 async function newPage(browser, viewport, errors) {
     const ctx = await browser.newContext({ viewport, colorScheme: 'dark', locale: 'es-ES' });
     await ctx.addInitScript(FAKE_SPEECH);
     const page = await ctx.newPage();
+    page.on('request', (r) => { const u = new URL(r.url()); if (/^https?:$/.test(u.protocol) && u.hostname !== 'localhost') external.add(u.hostname); });
     page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
     await page.goto(`http://localhost:${PORT}/`);
@@ -665,6 +670,7 @@ async function openSample(page) {
     }
 
     check('Sin errores de JavaScript en consola', errors.length === 0, errors);
+    check('Sin conexiones a terceros (fuentes, librerías y OCR van dentro de la app)', external.size === 0, [...external]);
 
     await browser.close();
     srv.close();

@@ -43,6 +43,13 @@ Lectura Veloz es una aplicación de lectura rápida, moderna, gratuita y sin con
   - Cada libro de la biblioteca tiene un botón ▣ para abrirlo directamente en la ventana flotante.
   - Detalles en [docs/VENTANA-FLOTANTE.md](docs/VENTANA-FLOTANTE.md).
 
+## Google Play
+
+La versión 1.0.0 está preparada para publicarse gratis en Google Play (AAB, API 37, páginas de 16 KB, sin conexiones a terceros, política de privacidad y licencias en `web/legal.html`). Pasos, respuestas de Play Console y plan de monetización: [docs/PLAY-STORE.md](docs/PLAY-STORE.md). Textos y gráficos de la ficha: [store/](store/ficha.md).
+
+- `npm run vendor`: copia en `web/vendor/` las librerías, fuentes y modelos del OCR (lo hacen solos `tauri build` y las pruebas).
+- `npm run android:build`: AAB para Play · `npm run android:apk`: APK para instalar a mano.
+
 ## En el móvil: gestos al estilo VLC
 
 En Android (y en cualquier pantalla táctil), el lector se controla con gestos en **toda la pantalla y en todos los modos**, y muestra los valores en grande mientras deslizas:

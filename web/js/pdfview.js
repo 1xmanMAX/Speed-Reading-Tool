@@ -14,8 +14,10 @@
 
   var LV = window.LV = window.LV || {};
 
-  var PDFJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-  var WORKER_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  // pdf.js va dentro de la app (scripts/vendor.mjs)
+  var VENDOR = new URL('../vendor/', (document.currentScript && document.currentScript.src) || location.href).href;
+  var PDFJS_URL = VENDOR + 'pdfjs/pdf.min.js';
+  var WORKER_URL = VENDOR + 'pdfjs/pdf.worker.min.js';
   var CSS_UNITS = 96 / 72;          // escala que corresponde a "100 %"
   var MAX_FIT_WIDTH = 900;          // ancho máximo al ajustar (px CSS)
   var MAX_RENDERED = 8;             // páginas con canvas en memoria

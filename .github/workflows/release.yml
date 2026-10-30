@@ -56,7 +56,7 @@ jobs:
           key: ${{ matrix.name }}
 
       - name: Install frontend/CLI dependencies
-        run: npm install
+        run: npm ci
 
       - uses: tauri-apps/tauri-action@v0
         env:
@@ -70,7 +70,7 @@ jobs:
           args: ${{ matrix.args }}
 
   android:
-    name: Android (APK)
+    name: Android (AAB para Google Play + APK)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -86,7 +86,7 @@ jobs:
           packages: platform-tools
 
       - name: Install NDK
-        run: sdkmanager --install "ndk;27.0.12077973" "build-tools;34.0.0"
+        run: sdkmanager --install "ndk;27.0.12077973" "build-tools;36.0.0"
 
       - uses: actions/setup-node@v4
         with:
@@ -94,20 +94,28 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
 
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: "./src-tauri -> target"
           key: android
 
-      - name: Install CLI
-        run: npm install
+      # npm ci: las versiones exactas de package-lock (las librerías que van dentro de la app)
+      - name: Install CLI and bundled libraries
+        run: npm ci
 
       - name: Init Android project
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
         run: npx tauri android init --ci
+
+      # Google Play pide AAB (arm64, armv7 y x86_64 para Chromebooks/emuladores). El APK es para
+      # instalar a mano. tauri ejecuta antes «npm run vendor» (beforeBuildCommand).
+      - name: Build AAB (Google Play)
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
+        run: npx tauri android build --aab --target aarch64 --target armv7 --target x86_64
 
       - name: Build APK (arm64 + armv7)
         env:
@@ -117,14 +125,14 @@ jobs:
       # Firma: usa la clave de los secretos ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD /
       # ANDROID_KEY_ALIAS si existen (recomendado: así las actualizaciones se instalan encima).
       # Si no, genera una clave temporal para que el APK se pueda instalar igualmente.
-      - name: Sign APK
+      - name: Sign AAB and APK
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
           set -e
-          BT="$ANDROID_HOME/build-tools/34.0.0"
+          BT="$ANDROID_HOME/build-tools/36.0.0"
           if [ -n "$KEYSTORE_B64" ]; then
             echo "$KEYSTORE_B64" | base64 -d > release.jks
           else
@@ -134,17 +142,33 @@ jobs:
               -storepass "$KEYSTORE_PASS" -keypass "$KEYSTORE_PASS" -dname "CN=Lectura Veloz"
           fi
           UNSIGNED=$(find src-tauri/gen/android/app/build/outputs/apk -name '*release-unsigned.apk' | head -1)
+          AAB=$(find src-tauri/gen/android/app/build/outputs/bundle -name '*release.aab' | head -1)
           mkdir -p dist
-          "$BT/zipalign" -f -p 4 "$UNSIGNED" dist/aligned.apk
+          # AAB: firmado con la clave de subida (Play lo vuelve a firmar con la de la app).
+          # Solo con la clave de los secretos: un AAB con clave temporal ataría la ficha de
+          # Play a una clave que se pierde al terminar el trabajo.
+          if [ -n "$KEYSTORE_B64" ]; then
+            cp "$AAB" dist/LecturaVeloz.aab
+            jarsigner -sigalg SHA256withRSA -digestalg SHA-256 -keystore release.jks \
+              -storepass "$KEYSTORE_PASS" -keypass "$KEYSTORE_PASS" dist/LecturaVeloz.aab "$KEY_ALIAS"
+            jarsigner -verify dist/LecturaVeloz.aab | grep -q "jar verified"
+          else
+            echo "::warning::Sin secretos de firma no se genera el AAB para Google Play."
+          fi
+          # APK: librerías nativas alineadas a 16 KB (-P 16), como pide Google Play
+          "$BT/zipalign" -f -P 16 4 "$UNSIGNED" dist/aligned.apk
           "$BT/apksigner" sign --ks release.jks --ks-key-alias "$KEY_ALIAS" --ks-pass "pass:$KEYSTORE_PASS" \
             --key-pass "pass:$KEYSTORE_PASS" --out dist/LecturaVeloz.apk dist/aligned.apk
           "$BT/apksigner" verify dist/LecturaVeloz.apk
+          "$BT/zipalign" -c -P 16 4 dist/LecturaVeloz.apk
           rm -f release.jks dist/aligned.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: lectura-veloz-android
-          path: dist/LecturaVeloz.apk
+          path: |
+            dist/LecturaVeloz.aab
+            dist/LecturaVeloz.apk
           if-no-files-found: error
 
       - name: Attach APK to release
@@ -153,4 +177,6 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           draft: true
-          files: dist/LecturaVeloz.apk
+          files: |
+            dist/LecturaVeloz.aab
+            dist/LecturaVeloz.apk
